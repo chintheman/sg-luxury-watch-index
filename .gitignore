@@ -1,0 +1,19 @@
+# Data (runtime-generated, never committed)
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Editor / OS
+.DS_Store
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local

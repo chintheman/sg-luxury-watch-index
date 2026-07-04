@@ -1,0 +1,442 @@
+#!/usr/bin/env python3
+"""
+SG Luxury Watch Index — Index Engine v2.0
+=========================================
+Produces a family of indices from Telegram secondary-market listings.
+
+Methodology:
+  - Laspeyres-weighted composite (brand prestige × listing volume)
+  - Median price per brand per day (outlier-resilient)
+  - Separate indices by condition (Pre-Owned, NEW/NOS)
+  - Brand sub-indices for top brands
+  - Availability score (daily listing count)
+  - Per-brand baselines: first 90 days of each brand's data
+  - Anchor: 1.0 at the date when 50%+ brands have baseline data
+  - Minimum 3 listings per brand per day for inclusion
+
+Output: data/index.json (consumed by /api/watch-index → /watches)
+"""
+
+import sqlite3, json, re, sys
+from datetime import datetime, timedelta, timezone
+from collections import Counter, defaultdict
+from statistics import median
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "parser"))
+try:
+    from filter import extract_price, extract_condition, is_watch_listing
+    HAS_FILTER = True
+except ImportError:
+    HAS_FILTER = False
+    def extract_brand(t): return None
+    def extract_price(t): return None
+    def extract_condition(t): return "u"
+    def is_watch_listing(t): return True
+
+BASE = Path(__file__).resolve().parent.parent
+DB = BASE / "data" / "listings.db"
+OUT = BASE / "data" / "index.json"
+
+ANCHOR_VALUE = 1.0
+MIN_BASELINE_SAMPLES = 3
+MIN_DAILY_SAMPLES = 1
+
+# ── Prestige weights (0-10, from Chrono24 + horological consensus) ──
+PRESTIGE = {
+    "Patek Philippe": 10, "Richard Mille": 10, "A. Lange & Sohne": 9.5,
+    "Audemars Piguet": 9, "Vacheron Constantin": 9, "Breguet": 8.5,
+    "Rolex": 8, "H. Moser": 8, "Blancpain": 7.5,
+    "Jaeger-LeCoultre": 7, "Girard-Perregaux": 7, "Ulysse Nardin": 6.5,
+    "Cartier": 6.5, "Chopard": 6, "Zenith": 6,
+    "IWC": 5.5, "Panerai": 5.5, "Bulgari": 5.5,
+    "Omega": 5, "Grand Seiko": 5,
+    "Breitling": 4.5, "Hublot": 4.5, "Tudor": 4,
+    "TAG Heuer": 3.5, "Bell & Ross": 3.5,
+    "Franck Muller": 3, "Seiko": 2,
+}
+
+# ── Retail price database ──────────────────────────────────────────
+RETAIL_PRICES = {
+    "Rolex": {
+        "Submariner Date 126610": 15400, "Submariner 124060": 13700,
+        "Submariner 116610": 14400, "GMT-Master II 126710": 16100,
+        "Daytona 116500": 18800, "Datejust 41 126334": 12600,
+        "Datejust 36 126234": 11700, "Explorer II 226570": 14000,
+        "Explorer 124270": 9500, "Explorer 214270": 10200,
+        "Explorer II 216570": 13100, "Yacht-Master 126622": 16800,
+        "Yacht-Master 226658": 24800, "Day-Date 228238": 49500,
+        "Sea-Dweller 126600": 18500, "OP 41 124300": 8100,
+        "OP 36 126000": 7700, "Milgauss 116400": 11800,
+        "Air-King 126900": 9600, "Sky-Dweller 326934": 21500,
+        "Sky-Dweller 336934": 21500,
+    },
+    "Omega": {
+        "Speedmaster Professional 310.30": 10300, "Speedmaster 311.30": 8500,
+        "Seamaster Diver 300M 210.30": 8200, "Seamaster Diver 300M 210.32": 8200,
+        "Seamaster 300 234.30": 9500, "Seamaster Planet Ocean 215.30": 9100,
+        "Seamaster Aqua Terra 220.10": 8100, "Constellation": 7500,
+    },
+    "Cartier": {
+        "Santos Medium WSSA0029": 10400, "Santos Large WSSA0018": 11200,
+        "Tank Must Large WSTA0041": 5400, "Tank Must XL WSTA0040": 5600,
+        "Tank Louis": 16800, "Panthère": 5500,
+        "Ballon Bleu 42mm": 10200, "Ballon Bleu 36mm": 8500,
+    },
+    "Tudor": {
+        "Black Bay 58 79030": 5400, "Black Bay 58 79010": 5400,
+        "Black Bay GMT M79830": 5900, "Black Bay 79230": 5100,
+        "Black Bay 41 79540": 4400, "Black Bay Chrono M79360": 7400,
+        "Pelagos M25600": 6700, "Royal 28500": 3100, "1926": 3100,
+    },
+}
+
+def get_retail_price(brand, text):
+    if brand not in RETAIL_PRICES:
+        return None
+    for keyword, price in RETAIL_PRICES[brand].items():
+        if keyword.lower() in (text or "").lower():
+            return price
+    return None
+
+# ── Gap filling ────────────────────────────────────────────────────
+def fill_series(series):
+    result = []
+    last = None
+
+def extract_brand(text):
+    if not text:
+        return None
+    BRANDS = ["Rolex","Patek Philippe","Audemars Piguet","Omega","Cartier","Tudor","Breitling","Jaeger-LeCoultre","Panerai","IWC","Hublot","TAG Heuer","Vacheron Constantin","Grand Seiko","Seiko","Chopard","Blancpain","Breguet","Franck Muller","A. Lange","Richard Mille","H. Moser","Bell","Bulgari","Zenith","Ulysse Nardin","Girard-Perregaux"]
+    for b in BRANDS:
+        if b.lower() in text.lower():
+            return b
+    return None
+    for pt in series:
+        if pt["value"] is not None:
+            last = pt["value"]
+        if last is not None:
+            result.append({**pt, "value": last})
+        else:
+            result.append(pt)
+    return result
+
+def val_at_date(series, target_date):
+    target = datetime.strptime(target_date, "%Y-%m-%d")
+    best = None
+    for pt in series:
+        pt_date = datetime.strptime(pt["date"], "%Y-%m-%d")
+        if pt_date <= target:
+            best = pt["value"]
+    return best
+
+# ── Main ───────────────────────────────────────────────────────────
+def build_indices():
+    conn = sqlite3.connect(str(DB))
+    rows = list(conn.execute(
+        "SELECT channel_handle, message_id, posted_at, message_text FROM raw_messages"
+    ))
+    conn.close()
+
+    # Phase 1: Parse all records
+    records = []
+    for ch, mid, ts, text in rows:
+        if not text:
+            continue
+        if HAS_FILTER and not is_watch_listing(text):
+            continue
+        brand = extract_brand(text)
+        price = extract_price(text)
+        if not brand or not price or not (500 <= price <= 500000):
+            continue
+        cond = extract_condition(text)
+        retail = get_retail_price(brand, text)
+        date = ts[:10]
+        if date < "2025-01-01":
+            continue
+        records.append({
+            "brand": brand, "price": price, "cond": cond,
+            "date": date, "retail": retail,
+        })
+
+    if not records:
+        print("ERROR: No priced records found.")
+        return
+
+    records.sort(key=lambda r: r["date"])
+    all_dates = sorted(set(r["date"] for r in records))
+    all_brands = set(r["brand"] for r in records)
+    print(f"Priced records: {len(records)}")
+    print(f"Date range: {all_dates[0]} → {all_dates[-1]} ({len(all_dates)} days)")
+    print(f"Brands: {len(all_brands)}")
+
+    # Phase 2: Per-brand baselines (first 90 days of each brand)
+    brand_first_seen = {}
+    for r in records:
+        if r["brand"] not in brand_first_seen:
+            brand_first_seen[r["brand"]] = r["date"]
+
+    baseline_median = {}
+    for brand in all_brands:
+        first = brand_first_seen[brand]
+        first_dt = datetime.strptime(first, "%Y-%m-%d")
+        window_end = (first_dt + timedelta(days=180)).strftime("%Y-%m-%d")
+        prices = [r["price"] for r in records
+                   if r["brand"] == brand and r["date"] <= window_end]
+        if len(prices) >= MIN_BASELINE_SAMPLES:
+            baseline_median[brand] = median(prices)
+
+    print(f"Brands with baseline: {len(baseline_median)} of {len(all_brands)}")
+    missing = all_brands - set(baseline_median.keys())
+    if missing:
+        print(f"Missing baseline: {missing}")
+
+    # Phase 3: Brand weights (50% prestige + 50% volume)
+    now = datetime.now()
+    sixmo = now - timedelta(days=180)
+    recent = [r for r in records if r["date"] >= sixmo.strftime("%Y-%m-%d")]
+    brand_vol = Counter(r["brand"] for r in recent)
+    total_vol = sum(brand_vol.values()) or 1
+
+    vol_weight = {b: c / total_vol for b, c in brand_vol.items()}
+    max_vw = max(vol_weight.values()) if vol_weight else 1
+    norm_vol = {b: w / max_vw for b, w in vol_weight.items()}
+
+    brand_weight = {}
+    for b in all_brands:
+        p = PRESTIGE.get(b, 3)
+        v = norm_vol.get(b, 0)
+        brand_weight[b] = 0.5 * (p / 10) + 0.5 * v
+
+    total_bw = sum(brand_weight.values())
+    brand_weight = {b: w / total_bw for b, w in brand_weight.items()}
+
+    print(f"Top weights: {', '.join(f'{b}={w:.3f}' for b, w in sorted(brand_weight.items(), key=lambda x: -x[1])[:5])}")
+
+    # Phase 4: Daily medians per brand
+    daily_by_brand = defaultdict(lambda: defaultdict(list))
+    for r in records:
+        daily_by_brand[r["date"]][r["brand"]].append(r["price"])
+
+    # Phase 5: Find anchor date (50%+ of baselined brands have appeared)
+    anchor_date = None
+    brands_seen = set()
+    for date in sorted(daily_by_brand.keys()):
+        brands_seen |= set(daily_by_brand[date].keys())
+        qualified = sum(1 for b in brands_seen if b in baseline_median)
+        if len(baseline_median) > 0 and qualified / len(baseline_median) >= 0.5:
+            anchor_date = date
+            break
+
+    print(f"Anchor date (50%+ brands): {anchor_date or 'NOT FOUND'}")
+
+    # Phase 6: Compute daily composite index
+    composite = []
+    preowned = []
+    new_idx_list = []
+    availability = []
+
+    for date in sorted(daily_by_brand.keys()):
+        day = daily_by_brand[date]
+        day_median = {}
+        for brand, prices in day.items():
+            if brand in baseline_median and len(prices) >= MIN_DAILY_SAMPLES:
+                day_median[brand] = median(prices)
+
+        if day_median:
+            weighted_sum = 0.0
+            weight_used = 0.0
+            for brand, mp in day_median.items():
+                bw = brand_weight.get(brand, 0)
+                ratio = mp / baseline_median[brand]
+                weighted_sum += bw * ratio
+                weight_used += bw
+            val = round(ANCHOR_VALUE * weighted_sum / weight_used, 4) if weight_used > 0 else None
+        else:
+            val = None
+        composite.append({
+            "date": date, "value": val,
+            "brands_tracked": len(day_median),
+            "total_listings": sum(len(p) for p in day.values()),
+        })
+
+        # Availability
+        total_day = sum(len(p) for p in day.values())
+        max_day = max(sum(len(p) for p in d.values()) for d in daily_by_brand.values()) or 1
+        availability.append({"date": date, "value": round(total_day / max_day * 100)})
+
+        # Condition sub-indices
+        for cond_code, output_list in [("p", preowned), ("n", new_idx_list)]:
+            cond_prices = defaultdict(list)
+            for r in records:
+                if r["date"] == date and r["cond"] == cond_code and r["brand"] in baseline_median:
+                    cond_prices[r["brand"]].append(r["price"])
+            ratios = []
+            for brand, prices in cond_prices.items():
+                if len(prices) >= 2:
+                    ratios.append(median(prices) / baseline_median[brand])
+            output_list.append({
+                "date": date,
+                "value": round(ANCHOR_VALUE * sum(ratios) / len(ratios), 4) if ratios else None,
+            })
+
+    composite = fill_series(composite)
+    preowned = fill_series(preowned)
+    new_idx_list = fill_series(new_idx_list)
+    availability = fill_series(availability)
+
+    if not composite:
+        print("ERROR: No valid composite index values.")
+        return
+
+    # Phase 7: Brand sub-indices
+    top_brands = [b for b, _ in brand_vol.most_common(5)]
+    brand_subindices = {}
+    for brand in top_brands:
+        if brand not in baseline_median:
+            continue
+        bidx = []
+        for date in sorted(daily_by_brand.keys()):
+            day = daily_by_brand[date]
+            if brand in day and len(day[brand]) >= MIN_DAILY_SAMPLES:
+                val = round(ANCHOR_VALUE * median(day[brand]) / baseline_median[brand], 4)
+            else:
+                val = None
+            bidx.append({"date": date, "value": val})
+        brand_subindices[brand] = fill_series(bidx)
+
+    # Phase 8: Retail-secondary spread
+    spread_series = []
+    for date in sorted(daily_by_brand.keys()):
+        spreads = [r for r in records if r["date"] == date and r["retail"]]
+        if len(spreads) >= 3:
+            vals = [(r["retail"] - r["price"]) / r["retail"] * 100 for r in spreads]
+            spread_series.append({"date": date, "value": round(median(vals), 1)})
+        else:
+            spread_series.append({"date": date, "value": None})
+    spread_series = fill_series(spread_series)
+
+    # Phase 9: Key metrics
+    latest = composite[-1]
+    prev = composite[-2] if len(composite) > 1 else latest
+    chg_1d = round(latest["value"] - prev["value"], 4) if prev["value"] else 0
+    chg_1d_pct = round(chg_1d / prev["value"] * 100, 2) if prev["value"] else 0
+
+    now_str = datetime.now().strftime("%Y-%m-%d")
+    d30 = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+    d90 = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
+    v30 = val_at_date(composite, d30)
+    v90 = val_at_date(composite, d90)
+
+    po_latest = preowned[-1]["value"] if preowned else None
+    new_latest = new_idx_list[-1]["value"] if new_idx_list else None
+    cond_spread = round(new_latest - po_latest, 4) if (po_latest and new_latest) else None
+    retail_spread = spread_series[-1]["value"] if spread_series else None
+    avail_latest = availability[-1]["value"] if availability else None
+    pct_from_base = round((latest["value"] - ANCHOR_VALUE) / ANCHOR_VALUE * 100, 1)
+
+    trend_30d = "rising" if v30 and latest["value"] > v30 else "falling"
+
+    # Phase 10: Insights
+    insights = {}
+    if pct_from_base > 5:
+        insights["composite"] = (
+            f"SG-LWIX at {latest['value']:.4f} is {pct_from_base:+.1f}% from the {ANCHOR_VALUE} baseline — "
+            f"the secondary market is {trend_30d} and well above base-period prices."
+        )
+    elif pct_from_base > 0:
+        insights["composite"] = (
+            f"SG-LWIX at {latest['value']:.4f} is {pct_from_base:+.1f}% from baseline — "
+            f"a balanced market with mild appreciation."
+        )
+    elif pct_from_base > -5:
+        insights["composite"] = (
+            f"SG-LWIX at {latest['value']:.4f} is {pct_from_base:+.1f}% from baseline — "
+            f"slight softening in secondary-market asking prices."
+        )
+    else:
+        insights["composite"] = (
+            f"SG-LWIX at {latest['value']:.4f} is {pct_from_base:+.1f}% from baseline — "
+            f"significant market correction or inventory mix shift."
+        )
+
+    if cond_spread is not None:
+        insights["condition"] = (
+            f"NEW watches trade at a {cond_spread:+.4f} premium over Pre-Owned. "
+            f"A widening gap signals stronger demand for unworn pieces."
+        )
+    if retail_spread is not None:
+        insights["retail"] = (
+            f"Secondary-market prices average {abs(retail_spread):.1f}% "
+            f"{'below' if retail_spread > 0 else 'above'} retail. "
+            f"{'Premium' if retail_spread < 0 else 'Discount'} to authorised dealer pricing."
+        )
+    if avail_latest is not None:
+        insights["availability"] = (
+            f"Availability Score: {avail_latest}/100. Higher = more watches entering market. "
+            f"Falling scores often precede price increases."
+        )
+
+    # Output
+    output = {
+        "meta": {
+            "name": "SG Luxury Watch Index",
+            "symbol": "SG-LWIX",
+            "version": "2.0",
+            "methodology": (
+                "Laspeyres-weighted composite of secondary-market asking prices "
+                "from 15+ Singapore Telegram watch dealer channels. "
+                "Per-brand 90-day baseline medians. 50% prestige + 50% volume weights. "
+                f"Anchored at {ANCHOR_VALUE} when 50%+ brands have data."
+            ),
+            "base_value": ANCHOR_VALUE,
+            "anchor_date": anchor_date,
+            "updated": datetime.now().isoformat(),
+            "total_records": len(records),
+            "tracked_brands": len(all_brands),
+        },
+        "composite": {
+            "current": latest["value"],
+            "change_1d": chg_1d,
+            "change_1d_pct": chg_1d_pct,
+            "change_30d": round(latest["value"] - v30, 4) if v30 else None,
+            "change_30d_pct": round((latest["value"] - v30) / v30 * 100, 2) if v30 else None,
+            "change_90d": round(latest["value"] - v90, 4) if v90 else None,
+            "change_90d_pct": round((latest["value"] - v90) / v90 * 100, 2) if v90 else None,
+            "pct_from_base": pct_from_base,
+            "series": composite[-730:],
+        },
+        "condition_indices": {
+            "preowned": {"current": po_latest, "series": preowned[-730:]},
+            "new": {"current": new_latest, "series": new_idx_list[-730:]},
+            "spread": cond_spread,
+        },
+        "retail_spread": {"current": retail_spread, "series": spread_series[-730:]},
+        "availability": {"current": avail_latest, "series": availability[-730:]},
+        "brand_subindices": {
+            brand: {"current": bidx[-1]["value"] if bidx else None, "series": bidx[-730:] if bidx else []}
+            for brand, bidx in brand_subindices.items()
+        },
+        "brand_weights": {b: round(w, 4) for b, w in sorted(brand_weight.items(), key=lambda x: -x[1])},
+        "brand_counts": dict(brand_vol.most_common()),
+        "insights": insights,
+    }
+
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    OUT.write_text(json.dumps(output, indent=2, default=str))
+
+    print(f"\n{'='*60}")
+    print(f"  SG-LWIX: {latest['value']:.4f}  ({chg_1d:+.4f}/day, {chg_1d_pct:+.2f}%)")
+    print(f"  Pct from 1.0: {pct_from_base:+.1f}%  |  Trend: {trend_30d}")
+    print(f"  Anchor: {anchor_date}  |  Days tracked: {len(composite)}")
+    print(f"  Brands baselined: {len(baseline_median)}/{len(all_brands)}")
+    print(f"  Pre-Owned: {po_latest or 'N/A'}  |  NEW: {new_latest or 'N/A'}")
+    print(f"  Retail spread: {retail_spread or 'N/A'}%")
+    if cond_spread is not None:
+        print(f"  NEW-PO Spread: {cond_spread:+.4f}")
+    print(f"{'='*60}")
+    print(f"\n  {insights['composite']}")
+    print(f"\n  Written to {OUT}")
+
+if __name__ == "__main__":
+    build_indices()

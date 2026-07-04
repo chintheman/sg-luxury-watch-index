@@ -1,0 +1,26 @@
+#!/usr/bin/env python3
+import sqlite3, sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'parser'))
+from filter import is_listing
+
+DB = '/home/workspace/projects/sg-luxury-watch-index/data/listings.db'
+conn = sqlite3.connect(DB)
+rows = conn.execute('SELECT message_text FROM raw_messages WHERE message_text IS NOT NULL').fetchall()
+conn.close()
+
+total = len(rows)
+passed = 0
+reasons = {}
+for (text,) in rows:
+    r, reason = is_listing(text)
+    if r:
+        passed += 1
+    else:
+        reasons[reason] = reasons.get(reason, 0) + 1
+
+print(f'Total: {total}')
+print(f'Passed: {passed} ({passed/total*100:.0f}%)')
+print('Filtered:')
+for k, v in sorted(reasons.items(), key=lambda x: -x[1]):
+    print(f'  {k}: {v}')
+print(f'  Total filtered: {total-passed}')

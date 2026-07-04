@@ -1,0 +1,190 @@
+#!/usr/bin/env python3
+"""
+Export + Index recalculation pipeline v2.
+- Integrated sold tracing (cross-references SOLD messages against active listings)
+- Time-based expiry (drop listings older than N days)
+- Optional link checking (verify t.me links still resolve)
+
+Usage:
+  python index/export_pipeline.py                     # Default: 14d expiry, sold trace, no link check
+  python index/export_pipeline.py --max-age-days 7     # 7-day expiry
+  python index/export_pipeline.py --link-check          # Enable link verification
+  python index/export_pipeline.py --no-sold-trace       # Skip sold tracing
+"""
+
+import sys, json, argparse, time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "parser"))
+
+from filter import is_watch_listing, extract_price as filt_extract_price, extract_condition, extract_model
+from index.index_engine import extract_brand, build_indices
+
+import sqlite3
+from datetime import datetime, timedelta, timezone
+from urllib.request import urlopen, Request
+from urllib.error import URLError, HTTPError
+
+SGT = timezone(timedelta(hours=8))
+DB = ROOT / "data" / "listings.db"
+LISTINGS_OUT = ROOT / "data" / "listings.json"
+INDEX_OUT = ROOT / "data" / "index.json"
+REMOVED_IN = ROOT / "data" / "removed.json"
+
+
+def export_listings(max_age_days=14, link_check=False, sold_trace=True):
+    conn = sqlite3.connect(str(DB))
+    conn.row_factory = sqlite3.Row
+
+    # Load removed IDs from sold tracer
+    removed_ids = set()
+    removed_reasons = {}
+    if sold_trace:
+        try:
+            from sold_tracer import trace_sold_messages
+            trace_result = trace_sold_messages(str(DB), str(LISTINGS_OUT))
+            removed_ids = set(trace_result.get("removed_ids", []))
+            removed_reasons = trace_result.get("reasons", {})
+            print(f"Sold tracer: marked {len(removed_ids)} listings for removal")
+        except ImportError as e:
+            print(f"Sold tracer unavailable: {e}")
+
+    # Load removed.json if it exists from previous runs
+    if REMOVED_IN.exists():
+        prev = json.loads(REMOVED_IN.read_text())
+        for rid in prev.get("removed_ids", []):
+            removed_ids.add(rid)
+            if rid not in removed_reasons and rid in prev.get("reasons", {}):
+                removed_reasons[rid] = prev["reasons"][rid]
+
+    # Time cutoff
+    now = datetime.now(SGT)
+    cutoff_date = (now - timedelta(days=max_age_days)).strftime("%Y-%m-%d")
+    db_cutoff = (now - timedelta(days=90)).isoformat()
+
+    rows = conn.execute(
+        "SELECT id, channel_handle, message_id, posted_at, message_text, photos_count, views "
+        "FROM raw_messages WHERE posted_at >= ? ORDER BY posted_at DESC",
+        (db_cutoff,)
+    ).fetchall()
+
+    listings = []
+    expired_count = 0
+    sold_removed_count = 0
+    link_dead_count = 0
+
+    for r in rows:
+        text = r["message_text"] or ""
+        brand = extract_brand(text)
+        price = filt_extract_price(text, convert_to_sgd=True)
+        cond = extract_condition(text)
+        listing_id = f"{r['channel_handle']}-{r['message_id']}"
+        listing_date = r["posted_at"][:10] if r["posted_at"] else None
+
+        if not (brand or price) or not is_watch_listing(text):
+            continue
+
+        # ── Time-based expiry ──
+        if listing_date and listing_date < cutoff_date:
+            expired_count += 1
+            continue
+
+        # ── Sold tracer removal ──
+        if listing_id in removed_ids:
+            sold_removed_count += 1
+            continue
+
+        model_name, _ = extract_model(text, brand)
+        listings.append({
+            "i": r["id"],
+            "c": r["channel_handle"],
+            "m": r["message_id"],
+            "d": listing_date,
+            "t": text[:200],
+            "f": r["photos_count"] or 0,
+            "v": r["views"],
+            "p": price,
+            "b": brand,
+            "n": cond,
+            "md": model_name,
+            "l": f"https://t.me/s/{r['channel_handle']}/{r['message_id']}",
+        })
+
+    # ── Link checking ──
+    if link_check:
+        print(f"Verifying {len(listings)} listing links...")
+        verified = []
+        for l in listings:
+            try:
+                ok = check_link(l["l"])
+                if ok:
+                    verified.append(l)
+                else:
+                    link_dead_count += 1
+            except Exception as e:
+                # Network error — keep the listing (assume transient)
+                verified.append(l)
+            time.sleep(0.3)  # rate limit
+        listings = verified
+
+    conn.close()
+
+    LISTINGS_OUT.write_text(json.dumps(listings))
+    total_dropped = expired_count + sold_removed_count + link_dead_count
+    print(f"Exported {len(listings)} listings ({sum(1 for l in listings if l['p'])} priced)")
+    print(f"Dropped {total_dropped}: {expired_count} expired, {sold_removed_count} sold, {link_dead_count} dead links")
+    return listings
+
+
+def check_link(url):
+    """Verify a t.me/s/ link still resolves to a valid message.
+    Returns True if the link works, False if it's dead."""
+    try:
+        req = Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (compatible; WatchIndexBot/2.0)",
+            "Accept": "text/html",
+        })
+        resp = urlopen(req, timeout=10)
+        html = resp.read().decode("utf-8", errors="replace")
+
+        # Dead messages on t.me/s/ redirect to the channel page without the message
+        # Signs of a dead link:
+        # 1. Page is too short (just channel header, no message)
+        # 2. Contains specific error markers
+        if len(html) < 5000:
+            return False
+        if "If you have" in html and "Telegram" in html and "tgme_widget_message" not in html:
+            return False
+        if "not found" in html.lower() and "tgme_widget_message" not in html:
+            return False
+
+        return "tgme_widget_message" in html
+    except HTTPError as e:
+        return False
+    except URLError:
+        raise  # transient network error — caller should retry
+    except Exception:
+        return True  # assume valid on unexpected errors
+
+
+def recalc_index():
+    """Recalculate the full SG-LWIX index and write index.json."""
+    build_indices()
+    print(f"Index recalculated -> {INDEX_OUT}")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Export watch listings + recalculate index")
+    parser.add_argument("--max-age-days", type=int, default=14,
+                        help="Drop listings older than N days (default: 14)")
+    parser.add_argument("--link-check", action="store_true",
+                        help="Verify each t.me link still resolves")
+    parser.add_argument("--no-sold-trace", action="store_true",
+                        help="Skip sold tracer cross-referencing")
+    args = parser.parse_args()
+
+    export_listings(max_age_days=args.max_age_days, link_check=args.link_check,
+                    sold_trace=not args.no_sold_trace)
+    recalc_index()
