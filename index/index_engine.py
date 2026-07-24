@@ -19,7 +19,7 @@ Output: data/index.json (consumed by /api/watch-index → /watches)
 
 import sqlite3, json, re, sys
 from datetime import datetime, timedelta, timezone
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 from statistics import median
 from pathlib import Path
 
@@ -68,6 +68,10 @@ WINDOW_DAYS = 3
 COND_WINDOW_DAYS = 14
 MIN_COND_PER_BRAND = 2
 MIN_COND_BRANDS = 2
+
+# Availability score's ceiling — trailing window, not a fixed all-time max
+# (see the comment where this is used in build_indices() for why).
+AVAILABILITY_ROLLING_DAYS = 60
 
 # ── Prestige weights (0-10, from Chrono24 + horological consensus) ──
 # Gerald Genta, Parmigiani Fleurier, Roger Dubuis, Louis Moinet, Glashutte
@@ -577,6 +581,32 @@ def build_indices():
             for brand, prices in daily_by_brand[wdate].items():
                 windowed_by_brand[date][brand].extend(prices)
 
+    # Availability score's ceiling: a rolling trailing max, not a fixed
+    # all-time max. The channel roster isn't constant over the ~250-day
+    # history (some channels went dormant, others only came online
+    # partway through, sgwatchinsider's batch-post splitting could start
+    # contributing more going forward) — an all-time max fixes the ceiling
+    # to whichever era happened to have the most channels scraping, which
+    # mechanically deflates every other era regardless of real listing
+    # volume, and silently re-inflates every time channel coverage grows.
+    # A trailing window means the ceiling reflects recent scraping
+    # capacity, so the score is closer to "activity vs. the recent norm"
+    # than "activity vs. this codebase's best-ever scrape."
+    # Calendar-day window, not an index-count window: dates_sorted only
+    # contains dates that actually have listings, so a large gap (real in
+    # this data — some stretches have no scraped activity for weeks) would
+    # otherwise let a stale date sit in an "N dates ago" window long past
+    # when it should have aged out on the calendar.
+    daily_totals = {d: sum(len(p) for p in daily_by_brand[d].values()) for d in dates_sorted}
+    rolling_max_by_date = {}
+    window_dq = deque()
+    for date in dates_sorted:
+        window_dq.append(date)
+        cutoff = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=AVAILABILITY_ROLLING_DAYS - 1)).strftime("%Y-%m-%d")
+        while window_dq and window_dq[0] < cutoff:
+            window_dq.popleft()
+        rolling_max_by_date[date] = max((daily_totals[d] for d in window_dq), default=1) or 1
+
     # Phase 5: Find anchor date (50%+ of baselined brands have appeared)
     anchor_date = None
     brands_seen = set()
@@ -663,10 +693,13 @@ def build_indices():
             "value": retail_val,
         })
 
-        # Availability
-        total_day = sum(len(p) for p in day.values())
-        max_day = max(sum(len(p) for p in d.values()) for d in daily_by_brand.values()) or 1
-        availability.append({"date": date, "value": round(total_day / max_day * 100)})
+        # Availability — raw same-day count (not the 3-day-pooled `day`,
+        # which would blur this into a smoothed figure) against a trailing
+        # rolling ceiling rather than a fixed all-time one (see above).
+        availability.append({
+            "date": date,
+            "value": round(daily_totals[date] / rolling_max_by_date[date] * 100),
+        })
 
         # Condition sub-indices — pooled over COND_WINDOW_DAYS, see above.
         for cond_code, output_list in [("p", preowned), ("n", new_idx_list)]:

@@ -351,3 +351,58 @@ def test_new_subindex_uses_wide_window_not_single_day(tmp_path, monkeypatch):
 def test_new_subindex_requires_min_cond_brands():
     assert ie.MIN_COND_BRANDS >= 2
     assert ie.COND_WINDOW_DAYS >= 7
+
+
+# ── Availability score: rolling ceiling, not a fixed all-time max ──────────
+# The channel roster isn't constant over the history — some channels went
+# dormant, others came online partway through. A fixed all-time max ceiling
+# mechanically deflates every era except whichever one happened to have the
+# most channels scraping, and silently re-inflates every time coverage
+# grows. A trailing rolling max instead measures "vs. the recent norm."
+
+def test_availability_uses_rolling_not_alltime_max(tmp_path, monkeypatch):
+    db_path = tmp_path / "listings.db"
+    out_path = tmp_path / "index.json"
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        """CREATE TABLE raw_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            channel_handle TEXT NOT NULL,
+            message_id INTEGER NOT NULL,
+            posted_at TEXT NOT NULL,
+            message_text TEXT,
+            UNIQUE(channel_handle, message_id)
+        )"""
+    )
+    next_id = 1
+    # A big burst of listings 100 days ago (a one-off historical peak, well
+    # outside AVAILABILITY_ROLLING_DAYS=60), then a much smaller but
+    # consistent trickle in the recent past.
+    burst_rows = [
+        ("dealerx", next_id + i, _iso(100), f"Rolex Model{i} Price: SGD ${16000+i}")
+        for i in range(20)
+    ]
+    conn.executemany(
+        "INSERT INTO raw_messages (channel_handle, message_id, posted_at, message_text) VALUES (?, ?, ?, ?)",
+        burst_rows,
+    )
+    next_id += 20
+    next_id = _seed_baseline(conn, "Rolex", 16000, next_id, n=3, start_days_ago=10)
+    next_id = _seed_baseline(conn, "Omega", 5000, next_id, n=3, start_days_ago=10)
+    next_id = _seed_baseline(conn, "Cartier", 8000, next_id, n=3, start_days_ago=10)
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(ie, "DB", db_path)
+    monkeypatch.setattr(ie, "OUT", out_path)
+    ie.build_indices()
+
+    import json
+    output = json.loads(out_path.read_text())
+    avail = output["availability"]["series"]
+    recent = [pt for pt in avail if pt["date"] >= (datetime.now(SGT) - timedelta(days=10)).strftime("%Y-%m-%d")]
+    assert recent
+    # With a fixed all-time max (20-listing burst day), recent days with
+    # only 1-3 listings would round to ~5-15/100. With a rolling ceiling
+    # that's aged out the burst, recent days should score much higher.
+    assert any(pt["value"] >= 50 for pt in recent)
