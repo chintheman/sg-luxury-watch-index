@@ -193,6 +193,7 @@ def trace_sold_messages(db_path=None, listings=None, listings_path=None):
         "reasons": matched_removals,
     }
 
+    REMOVED_OUT.parent.mkdir(parents=True, exist_ok=True)
     REMOVED_OUT.write_text(json.dumps(output, indent=2))
     print(f"Sold tracer: removed {len(removal_ids)} listings")
     print(f"  Item number matches: {strategies['item_number']}")
