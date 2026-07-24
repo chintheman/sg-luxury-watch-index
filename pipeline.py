@@ -98,7 +98,7 @@ def main():
     run_step("Scrape", "python3 scraper/scraper.py")
 
     # Step 2: Export filtered listings JSON
-    run_step("Export listings", "python3 index/export_pipeline.py")
+    run_step("Export listings", "python3 index/export_pipeline.py --link-check")
 
     # Step 3: Surface data-quality anomalies for review
     check_anomalies()

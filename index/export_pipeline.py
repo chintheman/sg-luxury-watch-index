@@ -3,12 +3,16 @@
 Export + Index recalculation pipeline v2.
 - Integrated sold tracing (cross-references SOLD messages against active listings)
 - Time-based expiry (drop listings older than N days)
-- Optional link checking (verify t.me links still resolve)
+- Optional link checking (verify t.me links still resolve) — used by
+  pipeline.py on the regular schedule; scoped to listings at least
+  LINK_CHECK_MIN_AGE_DAYS old and capped at LINK_CHECK_MAX_PER_RUN per run
+  (oldest first) so it stays cheap enough to run every time rather than
+  needing a separate manual pass.
 
 Usage:
   python index/export_pipeline.py                     # Default: 14d expiry, sold trace, no link check
   python index/export_pipeline.py --max-age-days 7     # 7-day expiry
-  python index/export_pipeline.py --link-check          # Enable link verification
+  python index/export_pipeline.py --link-check          # Enable link verification (age-filtered, capped)
   python index/export_pipeline.py --no-sold-trace       # Skip sold tracing
 """
 
@@ -33,6 +37,17 @@ DB = ROOT / "data" / "listings.db"
 LISTINGS_OUT = ROOT / "data" / "listings.json"
 INDEX_OUT = ROOT / "data" / "index.json"
 REMOVED_IN = ROOT / "data" / "removed.json"
+
+
+# Link-checking is a real HTTP request per listing (~0.3s rate-limited) — on
+# the full listing set that's minutes of runtime and load against Telegram's
+# public web view every run. Two things keep it cheap enough to run on the
+# regular schedule instead of needing a manual --link-check invocation:
+# skip listings too new to plausibly be dead yet, and cap how many get
+# checked in a single run (oldest first, since staleness risk rises with
+# age) so coverage rotates across runs instead of one run doing everything.
+LINK_CHECK_MIN_AGE_DAYS = 2
+LINK_CHECK_MAX_PER_RUN = 300
 
 
 def export_listings(max_age_days=14, link_check=False, sold_trace=True):
@@ -155,9 +170,19 @@ def export_listings(max_age_days=14, link_check=False, sold_trace=True):
     # ── Link checking ──
     link_dead_count = 0
     if link_check:
-        print(f"Verifying {len(listings)} listing links...")
+        min_age_date = (now - timedelta(days=LINK_CHECK_MIN_AGE_DAYS)).strftime("%Y-%m-%d")
+        eligible = sorted(
+            (l for l in listings if l.get("d") and l["d"] < min_age_date),
+            key=lambda l: l["d"],
+        )[:LINK_CHECK_MAX_PER_RUN]
+        eligible_ids = {listing_key(l) for l in eligible}
+        print(f"Verifying {len(eligible)}/{len(listings)} listing links "
+              f"(skipping listings <{LINK_CHECK_MIN_AGE_DAYS}d old, capped at {LINK_CHECK_MAX_PER_RUN}/run)...")
         verified = []
         for l in listings:
+            if listing_key(l) not in eligible_ids:
+                verified.append(l)
+                continue
             try:
                 ok = check_link(l["l"])
                 if ok:
