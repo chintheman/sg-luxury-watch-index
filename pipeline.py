@@ -69,11 +69,19 @@ def check_anomalies():
     index_path = ROOT / "data" / "index.json"
     if index_path.exists():
         index = json.loads(index_path.read_text())
-        chg_pct = (index.get("composite") or {}).get("change_1d_pct")
+        composite = index.get("composite") or {}
+        chg_pct = composite.get("change_1d_pct")
         outlier_count = index.get("price_outlier_count", 0)
-        print(f"  Index: {chg_pct}% day-over-day, {outlier_count} price outlier(s) flagged")
+        days_since_fresh = composite.get("days_since_fresh", 0)
+        print(f"  Index: {chg_pct}% day-over-day, {outlier_count} price outlier(s) flagged, "
+              f"days_since_fresh={days_since_fresh}")
         if chg_pct is not None and abs(chg_pct) > INDEX_SWING_ALERT_PCT:
             flags.append(f"Composite index moved {chg_pct}% day-over-day (>{INDEX_SWING_ALERT_PCT}% threshold).")
+        if days_since_fresh and days_since_fresh >= 3:
+            flags.append(
+                f"Composite index hasn't had a fresh (non-carried-forward) value in "
+                f"{days_since_fresh} day(s) — too few brands have enough listings right now."
+            )
 
     if flags:
         print("\n  ⚠ Anomalies flagged for review:")

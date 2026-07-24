@@ -1,7 +1,7 @@
 """Regression tests for index/index_engine.py's outlier flag."""
 from statistics import median
 
-from index.index_engine import find_price_outliers, extract_brand, PRESTIGE
+from index.index_engine import find_price_outliers, extract_brand, PRESTIGE, fill_series, MIN_PER_BRAND
 
 
 def test_flags_price_far_below_brand_baseline():
@@ -61,3 +61,38 @@ def test_newly_added_brands_resolve_and_have_prestige_weights():
     ]:
         assert extract_brand(text) == brand
         assert brand in PRESTIGE
+
+
+# ── MIN_PER_BRAND / fill_series staleness ───────────────────────────────
+# A single listing determining a whole brand-day was the mechanism behind
+# confirmed ±100% single-brand-day swings (see the comment above
+# MIN_PER_BRAND in index_engine.py for the full trade-off analysis).
+
+def test_min_per_brand_requires_at_least_three_samples():
+    assert MIN_PER_BRAND == 3
+
+
+def test_fill_series_marks_carried_forward_points_as_stale():
+    series = [
+        {"date": "2026-07-01", "value": 1.10},
+        {"date": "2026-07-02", "value": None},
+        {"date": "2026-07-03", "value": None},
+        {"date": "2026-07-04", "value": 1.15},
+    ]
+
+    filled = fill_series(series)
+
+    assert [pt["value"] for pt in filled] == [1.10, 1.10, 1.10, 1.15]
+    assert [pt["stale"] for pt in filled] == [False, True, True, False]
+
+
+def test_fill_series_leading_gap_is_not_marked_stale():
+    # No prior value exists yet to carry forward — this is "no data", not
+    # a carried-forward repeat, so it shouldn't be flagged stale.
+    series = [{"date": "2026-07-01", "value": None}, {"date": "2026-07-02", "value": 1.0}]
+
+    filled = fill_series(series)
+
+    assert filled[0]["value"] is None
+    assert filled[0]["stale"] is False
+    assert filled[1]["stale"] is False

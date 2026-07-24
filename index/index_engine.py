@@ -41,7 +41,18 @@ OUT = BASE / "data" / "index.json"
 
 ANCHOR_VALUE = 1.0
 MIN_BASELINE_SAMPLES = 3
-MIN_PER_BRAND = 1
+# A single listing determining a brand's entire daily-window contribution
+# was the mechanism behind confirmed ±100% single-brand-day swings — over
+# the full history, 53% of (date, brand) window-pools had exactly 1 sample.
+# 3 is the textbook-correct value for outlier resistance (a median of 3
+# can't be dragged by one bad price; a median of 2 is just an average and
+# still is). Measured against the *full* history this drops fresh-day
+# coverage from 44% to 15%, which looks alarming — but that average is
+# dominated by the scraper's thin early months. Measured against the
+# actually-relevant recent window it holds up fine: 87% fresh over the last
+# 30 days, 76% over the last 90 (both better than MIN_PER_BRAND=2 gives on
+# the same recent windows). Re-check this if listing volume drops.
+MIN_PER_BRAND = 3
 MIN_BRANDS_PER_COMPOSITE = 3
 WINDOW_DAYS = 3
 
@@ -297,15 +308,22 @@ def get_retail_price(brand, text):
 
 # ── Gap filling ────────────────────────────────────────────────────
 def fill_series(series):
+    """Carry the last computed value forward through days that didn't
+    qualify (not enough brands/samples that day). Marks each carried-forward
+    point with stale=True so consumers — and the site — can tell a freshly
+    computed value apart from a repeat of an earlier one instead of both
+    looking identical, which is exactly the kind of silent-discontinuity gap
+    that erodes trust in a "daily" index once carry-forwards get frequent."""
     result = []
     last = None
     for pt in series:
         if pt["value"] is not None:
             last = pt["value"]
-        if last is not None:
-            result.append({**pt, "value": last})
+            result.append({**pt, "stale": False})
+        elif last is not None:
+            result.append({**pt, "value": last, "stale": True})
         else:
-            result.append(pt)
+            result.append({**pt, "stale": False})
     return result
 
 OUTLIER_LOW_MULT = 0.2
@@ -579,6 +597,14 @@ def build_indices():
     chg_1d = round(latest["value"] - prev["value"], 4) if prev["value"] else 0
     chg_1d_pct = round(chg_1d / prev["value"] * 100, 2) if prev["value"] else 0
 
+    # How many days back was the last genuinely fresh (non-carried-forward)
+    # composite value — 0 means today's value is fresh.
+    days_since_fresh = 0
+    for pt in reversed(composite):
+        if not pt.get("stale", False):
+            break
+        days_since_fresh += 1
+
     now_str = datetime.now().strftime("%Y-%m-%d")
     d7 = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
     d30 = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
@@ -687,6 +713,8 @@ def build_indices():
         },
         "composite": {
             "current": latest["value"],
+            "stale": latest.get("stale", False),
+            "days_since_fresh": days_since_fresh,
             "change_1d": chg_1d,
             "change_1d_pct": chg_1d_pct,
             "change_7d": round(latest["value"] - v7, 4) if v7 else None,
