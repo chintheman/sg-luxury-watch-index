@@ -60,6 +60,32 @@ MIN_BRANDS_PER_COMPOSITE = 3
 WINDOW_DAYS = 3
 
 # ── Prestige weights (0-10, from Chrono24 + horological consensus) ──
+# Gerald Genta, Parmigiani Fleurier, Roger Dubuis, Louis Moinet, Glashutte
+# Original, Chanel, and Louis Erard were added to close a "brand: null" gap
+# (real listings under these brands weren't recognized at all before). Their
+# weights were placed by cross-checking brand positioning against
+# independent horology sources rather than guessed cold:
+#   - Roger Dubuis / Parmigiani Fleurier (6.5): both consistently described
+#     as haute horlogerie tier — hand-finishing, complications, limited
+#     production — comparable to Girard-Perregaux (7) in exclusivity, placed
+#     slightly below it for lower brand recognition/heritage depth.
+#   - Gerald Genta (7): the eponymous designer of the AP Royal Oak and
+#     Patek Nautilus; LVMH-owned via La Fabrique du Temps. High design
+#     pedigree, but the brand itself has less market presence than GP/JLC.
+#   - Louis Moinet (6): "extremely interesting," limited/one-off production,
+#     but low mainstream brand recognition despite high-end positioning —
+#     placed with Chopard/Zenith rather than the haute horlogerie tier.
+#   - Glashutte Original (5.5): established German in-house manufacture,
+#     grouped with IWC/Panerai/Bulgari as respected-but-not-top-tier.
+#   - Chanel (4.5): explicitly framed in horology coverage as a fashion
+#     house watchmaking success (the J12's ceramic bracelet was genuinely
+#     influential) rather than a specialist horological manufacture —
+#     placed with Breitling/Hublot/Tudor, below Cartier/Bulgari.
+#   - Louis Erard (3.5): directly described as "entry-level-ish," explicitly
+#     marketed as an affordable alternative for Breguet/F.P. Journe admirers
+#     — placed with TAG Heuer/Bell & Ross.
+# Still ultimately subjective — worth a sanity pass from someone closer to
+# the SG secondary market than a web search.
 PRESTIGE = {
     "Patek Philippe": 10, "Richard Mille": 10, "A. Lange & Sohne": 9.5,
     "Audemars Piguet": 9, "Vacheron Constantin": 9, "Breguet": 8.5,
