@@ -1,7 +1,12 @@
 """Regression tests for index/index_engine.py's outlier flag."""
+import sqlite3
+from datetime import datetime, timedelta, timezone
 from statistics import median
 
+import index.index_engine as ie
 from index.index_engine import find_price_outliers, extract_brand, PRESTIGE, fill_series, MIN_PER_BRAND
+
+SGT = timezone(timedelta(hours=8))
 
 
 def test_flags_price_far_below_brand_baseline():
@@ -96,3 +101,108 @@ def test_fill_series_leading_gap_is_not_marked_stale():
     assert filled[0]["value"] is None
     assert filled[0]["stale"] is False
     assert filled[1]["stale"] is False
+
+
+# ── Batch-post splitting wired into build_indices() itself ─────────────────
+# The audit found that export_pipeline.py splitting batch "[WATCH DEALS...]"
+# posts into per-item listings didn't help the index: index_engine.py parses
+# raw_messages independently and never imported parser/batch.py, so the
+# index and the published listings.json ran on divergently-filtered data.
+
+def _iso(days_ago):
+    return (datetime.now(SGT) - timedelta(days=days_ago)).isoformat()
+
+
+def _seed_baseline(conn, brand, price, next_id, n=4, start_days_ago=60):
+    """Insert enough same-brand listings, spread across distinct days, to
+    satisfy MIN_BASELINE_SAMPLES/MIN_PER_BRAND for one brand."""
+    rows = []
+    for i in range(n):
+        rows.append((
+            "dealerx", next_id + i, _iso(start_days_ago - i),
+            f"{brand} Model Ref{i} Price: SGD ${price + i}",
+        ))
+    conn.executemany(
+        "INSERT INTO raw_messages (channel_handle, message_id, posted_at, message_text) VALUES (?, ?, ?, ?)",
+        rows,
+    )
+    return next_id + n
+
+
+def test_build_indices_splits_batch_posts(tmp_path, monkeypatch):
+    db_path = tmp_path / "listings.db"
+    out_path = tmp_path / "index.json"
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        """CREATE TABLE raw_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            channel_handle TEXT NOT NULL,
+            message_id INTEGER NOT NULL,
+            posted_at TEXT NOT NULL,
+            message_text TEXT,
+            UNIQUE(channel_handle, message_id)
+        )"""
+    )
+
+    next_id = 1
+    next_id = _seed_baseline(conn, "Rolex", 16000, next_id)
+    next_id = _seed_baseline(conn, "Omega", 5000, next_id)
+    next_id = _seed_baseline(conn, "Cartier", 8000, next_id)
+
+    batch_text = (
+        "[WATCH DEALS 01/01]\n"
+        "✅\n(AVAILABLE)\n✅\n(1) Rolex Datejust\nRef123\nPrice: SGD $16,500\n"
+        "✅\n(AVAILABLE)\n✅\n(2) Rolex Explorer\nRef456\nPrice: SGD $16,700\n"
+        "❌\nSOLD\n❌\n(3) Omega Speedmaster\nRef789\nPrice: SGD $5,200\n"
+    )
+    conn.execute(
+        "INSERT INTO raw_messages (channel_handle, message_id, posted_at, message_text) VALUES (?, ?, ?, ?)",
+        ("sgwatchinsider", next_id, _iso(30), batch_text),
+    )
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(ie, "DB", db_path)
+    monkeypatch.setattr(ie, "OUT", out_path)
+    ie.build_indices()
+
+    import json
+    output = json.loads(out_path.read_text())
+    # 4+4+4 baseline listings + 2 AVAILABLE batch sub-items = 14, NOT 15
+    # (whole message as one record) and NOT 12 (batch dropped entirely).
+    assert output["meta"]["total_records"] == 14
+
+
+def test_first_computed_differs_from_anchor_date_when_undersubscribed(tmp_path, monkeypatch):
+    # meta.first_computed must reflect the real first composite value, not
+    # just restate anchor_date as if a value existed there.
+    db_path = tmp_path / "listings.db"
+    out_path = tmp_path / "index.json"
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        """CREATE TABLE raw_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            channel_handle TEXT NOT NULL,
+            message_id INTEGER NOT NULL,
+            posted_at TEXT NOT NULL,
+            message_text TEXT,
+            UNIQUE(channel_handle, message_id)
+        )"""
+    )
+    next_id = 1
+    next_id = _seed_baseline(conn, "Rolex", 16000, next_id)
+    next_id = _seed_baseline(conn, "Omega", 5000, next_id)
+    next_id = _seed_baseline(conn, "Cartier", 8000, next_id)
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(ie, "DB", db_path)
+    monkeypatch.setattr(ie, "OUT", out_path)
+    ie.build_indices()
+
+    import json
+    output = json.loads(out_path.read_text())
+    fc = output["meta"]["first_computed"]
+    assert fc is not None
+    assert fc["value"] is not None
+    assert fc["brands_tracked"] >= 3

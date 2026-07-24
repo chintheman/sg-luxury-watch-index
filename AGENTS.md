@@ -43,10 +43,16 @@ projects/sg-luxury-watch-index/
 - **Type:** Laspeyres-weighted composite
 - **Brand weights:** 50% Horological Prestige (0–10 scale) + 50% Listing Volume (6mo rolling)
 - **Baseline:** Per-brand 180-day window median from first appearance
-- **Anchor:** 1.0 at date when 50%+ brands have baseline data
+- **Scale:** 1.0 represents brands trading exactly at their own baseline on
+  average. anchor_date (50%+ brands baselined) is a data-sufficiency
+  milestone, not a date the series is pinned to — it usually doesn't have
+  enough brands to compute a value itself. See index.json's
+  `meta.first_computed` for the actual first computed value/date.
 - **Window:** 3-day rolling median per brand (smooths sparse daily data)
-- **Thresholds:** 1 listing per brand, 3+ brands required for valid composite day
-- **Gap filling:** Carry-forward of last valid value
+- **Thresholds:** 3 listings per brand (median needs 3+ to actually resist
+  an outlier), 3+ brands required for valid composite day
+- **Gap filling:** Carry-forward of last valid value, marked `stale: true`
+  on every carried-forward point so it's distinguishable from a fresh one
 
 ## Key Decisions
 

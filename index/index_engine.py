@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "parser"))
 try:
     from filter import extract_price, extract_condition, is_watch_listing
     from brands import match_brand as extract_brand
+    from batch import is_batch_listing_post, split_batch_items
     HAS_FILTER = True
 except ImportError:
     HAS_FILTER = False
@@ -34,6 +35,8 @@ except ImportError:
     def extract_price(t): return None
     def extract_condition(t): return "u"
     def is_watch_listing(t): return True
+    def is_batch_listing_post(t): return False
+    def split_batch_items(t): return []
 
 BASE = Path(__file__).resolve().parent.parent
 DB = BASE / "data" / "listings.db"
@@ -365,26 +368,45 @@ def build_indices():
     ))
     conn.close()
 
-    # Phase 1: Parse all records
+    # Phase 1: Parse all records. Batch "roundup" posts (e.g. sgwatchinsider's
+    # "[WATCH DEALS ...]") are split into per-item candidates first — same as
+    # export_pipeline.py — since this function parses raw_messages
+    # independently rather than reusing export_pipeline's already-split
+    # listings. Without this the index and the published listings.json would
+    # silently run on divergently-filtered data.
     records = []
-    for ch, mid, ts, text in rows:
-        if not text:
-            continue
-        if HAS_FILTER and not is_watch_listing(text):
-            continue
+
+    def _record_from(text, date):
+        if not text or (HAS_FILTER and not is_watch_listing(text)):
+            return None
         brand = extract_brand(text)
         price = extract_price(text)
         if not brand or not price or not (500 <= price <= 500000):
+            return None
+        return {
+            "brand": brand, "price": price, "cond": extract_condition(text),
+            "date": date, "retail": get_retail_price(brand, text),
+        }
+
+    for ch, mid, ts, text in rows:
+        if not text:
             continue
-        cond = extract_condition(text)
-        retail = get_retail_price(brand, text)
         date = ts[:10]
         if date < "2025-01-01":
             continue
-        records.append({
-            "brand": brand, "price": price, "cond": cond,
-            "date": date, "retail": retail,
-        })
+
+        if HAS_FILTER and is_batch_listing_post(text):
+            for item in split_batch_items(text):
+                if not item["available"]:
+                    continue
+                rec = _record_from(item["body"], date)
+                if rec:
+                    records.append(rec)
+            continue
+
+        rec = _record_from(text, date)
+        if rec:
+            records.append(rec)
 
     if not records:
         print("ERROR: No priced records found.")
@@ -605,6 +627,14 @@ def build_indices():
             break
         days_since_fresh += 1
 
+    # The date/value data-sufficiency criteria first fire (anchor_date) is
+    # NOT the same as the first date a composite value actually computes —
+    # anchor_date itself usually doesn't have enough *brands* yet even
+    # though 50%+ of *baselined* brands have appeared, so it rarely equals
+    # 1.0 in practice. Surface the real first value/date explicitly rather
+    # than letting "anchored at 1.0" imply the series starts there.
+    first_computed = next((pt for pt in composite if pt["value"] is not None and not pt.get("stale")), None)
+
     now_str = datetime.now().strftime("%Y-%m-%d")
     d7 = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
     d30 = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
@@ -701,12 +731,16 @@ def build_indices():
             "version": "2.0",
             "methodology": (
                 "Laspeyres-weighted composite of secondary-market asking prices "
-                "from 15+ Singapore Telegram watch dealer channels. "
-                "Per-brand 90-day baseline medians. 50% prestige + 50% volume weights. "
-                f"Anchored at {ANCHOR_VALUE} when 50%+ brands have data."
+                "from 15+ Singapore Telegram watch dealer channels, expressed as "
+                "a weighted average of each brand's current price relative to its "
+                "own 90-day baseline median (50% prestige + 50% volume weights). "
+                f"{ANCHOR_VALUE} represents brands trading exactly at their own "
+                "baseline on average — it is a reference scale, not a value the "
+                "series is pinned to on a specific date; see first_computed."
             ),
             "base_value": ANCHOR_VALUE,
             "anchor_date": anchor_date,
+            "first_computed": first_computed,
             "updated": datetime.now().isoformat(),
             "total_records": len(records),
             "tracked_brands": len(all_brands),
