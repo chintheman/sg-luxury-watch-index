@@ -197,6 +197,7 @@ def export_listings(max_age_days=14, link_check=False, sold_trace=True):
 
     conn.close()
 
+    LISTINGS_OUT.parent.mkdir(parents=True, exist_ok=True)
     LISTINGS_OUT.write_text(json.dumps(listings))
     total_dropped = expired_count + sold_removed_count + link_dead_count
     print(f"Exported {len(listings)} listings ({sum(1 for l in listings if l['p'])} priced)")
