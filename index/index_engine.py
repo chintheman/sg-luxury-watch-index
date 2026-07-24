@@ -59,6 +59,16 @@ MIN_PER_BRAND = 3
 MIN_BRANDS_PER_COMPOSITE = 3
 WINDOW_DAYS = 3
 
+# Condition (New vs Pre-Owned) sub-indices: only ~14% of listings are Brand
+# New, so they need a much wider pool than the main composite's 3-day
+# window to avoid a single listing swinging the day's value. 14-day window
+# + min 2 per brand is the fix path AGENTS.md documented but never wired
+# up; MIN_COND_BRANDS is an added guard so a day isn't computed from just
+# one brand even after widening the pool.
+COND_WINDOW_DAYS = 14
+MIN_COND_PER_BRAND = 2
+MIN_COND_BRANDS = 2
+
 # ── Prestige weights (0-10, from Chrono24 + horological consensus) ──
 # Gerald Genta, Parmigiani Fleurier, Roger Dubuis, Louis Moinet, Glashutte
 # Original, Chanel, and Louis Erard were added to close a "brand: null" gap
@@ -595,6 +605,20 @@ def build_indices():
         if r["retail"]:
             records_by_date_retail[r["date"]].append(r)
 
+    # Condition (New vs Pre-Owned) sub-indices get their own wider pooling
+    # window: only ~14% of listings are Brand New, so a same-day-only pool
+    # (what the composite's 3-day WINDOW_DAYS would still be too tight for)
+    # swung the NEW index ±40% day to day — a single $45k Daytona landing on
+    # the same day as a $15k Datejust was enough to triple the day's median.
+    # This is the fix path documented in AGENTS.md but never implemented.
+    windowed_by_date_cond = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    for i, date in enumerate(dates_sorted):
+        for j in range(max(0, i - COND_WINDOW_DAYS + 1), i + 1):
+            wdate = dates_sorted[j]
+            for cond_code, recs in records_by_date_cond[wdate].items():
+                for r in recs:
+                    windowed_by_date_cond[date][cond_code][r["brand"]].append(r["price"])
+
     for date in dates_sorted:
         day = windowed_by_brand[date]
         day_median = {}
@@ -644,19 +668,16 @@ def build_indices():
         max_day = max(sum(len(p) for p in d.values()) for d in daily_by_brand.values()) or 1
         availability.append({"date": date, "value": round(total_day / max_day * 100)})
 
-        # Condition sub-indices
+        # Condition sub-indices — pooled over COND_WINDOW_DAYS, see above.
         for cond_code, output_list in [("p", preowned), ("n", new_idx_list)]:
-            cond_prices = defaultdict(list)
-            for r in records_by_date_cond[date][cond_code]:
-                cond_prices[r["brand"]].append(r["price"])
+            cond_prices = windowed_by_date_cond[date][cond_code]
             ratios = []
             for brand, prices in cond_prices.items():
-                if len(prices) >= 2:
+                if len(prices) >= MIN_COND_PER_BRAND:
                     ratios.append(median(prices) / baseline_median[brand])
-            output_list.append({
-                "date": date,
-                "value": round(ANCHOR_VALUE * sum(ratios) / len(ratios), 4) if ratios else None,
-            })
+            value = (round(ANCHOR_VALUE * sum(ratios) / len(ratios), 4)
+                     if len(ratios) >= MIN_COND_BRANDS else None)
+            output_list.append({"date": date, "value": value})
 
     composite = fill_series(composite)
     preowned = fill_series(preowned)

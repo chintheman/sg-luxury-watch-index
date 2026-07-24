@@ -292,3 +292,62 @@ def test_compute_baseline_median_falls_back_when_filtering_leaves_too_few():
 
 def test_compute_baseline_median_returns_none_below_min_samples():
     assert compute_baseline_median([16000, 16100], min_samples=3) is None
+
+
+# ── NEW/Pre-Owned condition sub-index fragility (originally-flagged issue) ─
+# Only ~14% of listings are Brand New, so a same-day-only pool (what the
+# code used before) meant a single listing could set — or wildly swing —
+# the day's value. AGENTS.md documented "14-day window + min 2 per brand"
+# as the fix path but it was never implemented until now.
+
+def test_new_subindex_uses_wide_window_not_single_day(tmp_path, monkeypatch):
+    db_path = tmp_path / "listings.db"
+    out_path = tmp_path / "index.json"
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        """CREATE TABLE raw_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            channel_handle TEXT NOT NULL,
+            message_id INTEGER NOT NULL,
+            posted_at TEXT NOT NULL,
+            message_text TEXT,
+            UNIQUE(channel_handle, message_id)
+        )"""
+    )
+    next_id = 1
+    next_id = _seed_baseline(conn, "Rolex", 16000, next_id, n=6, start_days_ago=60)
+    next_id = _seed_baseline(conn, "Omega", 5000, next_id, n=6, start_days_ago=60)
+    next_id = _seed_baseline(conn, "Cartier", 8000, next_id, n=6, start_days_ago=60)
+
+    # Two Brand New Rolexes spread across different days, and two Brand New
+    # Omegas on different days again — all within the same 14-day span, but
+    # never 2+ of the same brand on the SAME day. Under the old same-day-only
+    # logic this would never produce a value at all (MIN_COND_PER_BRAND=2
+    # could never be met in a single day); pooled over 14 days it should.
+    new_rows = [
+        ("dealerx", next_id, _iso(12), "Rolex Model BNIB Price: SGD $17000"),
+        ("dealerx", next_id + 1, _iso(9), "Rolex Model BNIB Price: SGD $17100"),
+        ("dealerx", next_id + 2, _iso(7), "Omega Model BNIB Price: SGD $5500"),
+        ("dealerx", next_id + 3, _iso(3), "Omega Model BNIB Price: SGD $5600"),
+    ]
+    conn.executemany(
+        "INSERT INTO raw_messages (channel_handle, message_id, posted_at, message_text) VALUES (?, ?, ?, ?)",
+        new_rows,
+    )
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(ie, "DB", db_path)
+    monkeypatch.setattr(ie, "OUT", out_path)
+    ie.build_indices()
+
+    import json
+    output = json.loads(out_path.read_text())
+    new_series = output["condition_indices"]["new"]["series"]
+    computed = [pt for pt in new_series if pt["value"] is not None and not pt.get("stale")]
+    assert len(computed) >= 1
+
+
+def test_new_subindex_requires_min_cond_brands():
+    assert ie.MIN_COND_BRANDS >= 2
+    assert ie.COND_WINDOW_DAYS >= 7
