@@ -16,7 +16,7 @@ from pathlib import Path
 from collections import defaultdict
 from parser.filter import extract_price, extract_condition
 from parser.filter import extract_model as filt_extract_model
-from index.index_engine import extract_brand
+from parser.brands import match_brand as extract_brand_local
 
 SGT = timezone(timedelta(hours=8))
 ROOT = Path(__file__).resolve().parent
@@ -41,45 +41,42 @@ def extract_item_number(text):
     return None
 
 
-# ── Brand extraction (from filter.py) ─────────────────────────────────────
-BRANDS = [
-    'Rolex', 'Omega', 'Patek Philippe', 'Tudor', 'Cartier', 'Breitling',
-    'Audemars Piguet', 'IWC', 'Panerai', 'Hublot', 'Tag Heuer', 'TAG Heuer',
-    'Seiko', 'Grand Seiko', 'Chopard', 'Blancpain', 'Breguet',
-    'Vacheron Constantin', 'Jaeger-LeCoultre', 'Franck Muller', 'A. Lange',
-    'Richard Mille', 'Bell & Ross', 'Casio', 'Oris',
-    'Zenith', 'Piaget', 'Longines', 'Tissot', 'Hamilton',
-    'G-Shock', 'Baltic', 'Nomos', 'Ulysse Nardin', 'Girard-Perregaux',
-    'Bulgari', 'Bvlgari', 'Corum', 'MB&F', 'FP Journe', 'Urwerk',
-    'H. Moser', 'Sinn', 'Swarovski', 'Gucci', 'Hermes', 'Montblanc',
-]
-
-
-def extract_brand_local(text):
-    return extract_brand(text)  # use filter.py's function
-
-
 # ── Main ──────────────────────────────────────────────────────────────────
 
-def trace_sold_messages(db_path=None, listings_path=None):
+def trace_sold_messages(db_path=None, listings=None, listings_path=None):
+    """Cross-reference SOLD messages against the currently active listing set.
+
+    `listings` should be the in-memory list of listings about to be exported
+    THIS run (same shape as listings.json entries) — matching against that,
+    rather than the on-disk listings.json from the previous run, is what lets
+    a listing that's scraped and marked sold within the same run get caught.
+    Falls back to reading listings_path from disk (previous run's snapshot)
+    when `listings` isn't supplied, e.g. for standalone/CLI use.
+    """
     db_path = Path(db_path or DB)
-    listings_path = Path(listings_path or ROOT / "data" / "listings.json")
 
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
 
-    # Load active listings
-    active = []
-    if listings_path.exists():
-        active = json.loads(listings_path.read_text())
+    # Active listings: prefer the freshly-computed in-memory set for this run
+    if listings is not None:
+        active = listings
+    else:
+        listings_path = Path(listings_path or ROOT / "data" / "listings.json")
+        active = json.loads(listings_path.read_text()) if listings_path.exists() else []
 
-    # Build lookup: (channel_handle, message_id) → listing
-    active_by_msg = {}
-    for l in active:
-        key = (l.get("c", "").lower(), l.get("m"))
-        active_by_msg[key] = l
+    # IDs of listings actually about to be published — only messages in this
+    # set can ever be worth "removing", so the match pool below is scoped to
+    # it directly rather than every non-SOLD message in the lookback window.
+    # (Previously the match pool was every raw message from the last 90 days,
+    # which meant most matches were against listings that had already aged
+    # out of the 14-day display window regardless — wasted work, and a
+    # source of stale/coincidental brand+price false-positive matches.)
+    current_ids = {f"{l.get('c', '')}-{l.get('m')}" for l in active}
 
-    # Get all messages (last LOOKBACK_DAYS)
+    # Get all messages (last LOOKBACK_DAYS) — SOLD messages themselves are
+    # still searched across the full window, since a sold post can lag the
+    # original listing by weeks.
     cutoff = (datetime.now(SGT) - timedelta(days=LOOKBACK_DAYS)).isoformat()
     all_msgs = conn.execute(
         "SELECT id, channel_handle, message_id, posted_at, message_text "
@@ -94,7 +91,7 @@ def trace_sold_messages(db_path=None, listings_path=None):
         text = m["message_text"] or ""
         if re.search(r'\bSOLD\b', text, re.I):
             sold_msgs.append(m)
-        else:
+        elif f"{m['channel_handle']}-{m['message_id']}" in current_ids:
             active_candidates.append(m)
 
     # Active by item number
@@ -196,12 +193,9 @@ def trace_sold_messages(db_path=None, listings_path=None):
 
     conn.close()
 
-    # Build output
-    # Map listing IDs from current listings.json
-    current_ids = set()
-    for l in active:
-        current_ids.add(f"{l.get('c','')}-{l.get('m')}")
-
+    # Build output — since active_candidates was already scoped to
+    # current_ids above, every match here is already a real candidate, but
+    # keep the explicit filter as a guard in case that invariant ever changes.
     matched_removals = {k: v for k, v in removed.items() if k in current_ids}
     removal_ids = list(matched_removals.keys())
 

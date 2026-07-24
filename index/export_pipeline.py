@@ -38,27 +38,6 @@ def export_listings(max_age_days=14, link_check=False, sold_trace=True):
     conn = sqlite3.connect(str(DB))
     conn.row_factory = sqlite3.Row
 
-    # Load removed IDs from sold tracer
-    removed_ids = set()
-    removed_reasons = {}
-    if sold_trace:
-        try:
-            from sold_tracer import trace_sold_messages
-            trace_result = trace_sold_messages(str(DB), str(LISTINGS_OUT))
-            removed_ids = set(trace_result.get("removed_ids", []))
-            removed_reasons = trace_result.get("reasons", {})
-            print(f"Sold tracer: marked {len(removed_ids)} listings for removal")
-        except ImportError as e:
-            print(f"Sold tracer unavailable: {e}")
-
-    # Load removed.json if it exists from previous runs
-    if REMOVED_IN.exists():
-        prev = json.loads(REMOVED_IN.read_text())
-        for rid in prev.get("removed_ids", []):
-            removed_ids.add(rid)
-            if rid not in removed_reasons and rid in prev.get("reasons", {}):
-                removed_reasons[rid] = prev["reasons"][rid]
-
     # Time cutoff
     now = datetime.now(SGT)
     cutoff_date = (now - timedelta(days=max_age_days)).strftime("%Y-%m-%d")
@@ -70,17 +49,20 @@ def export_listings(max_age_days=14, link_check=False, sold_trace=True):
         (db_cutoff,)
     ).fetchall()
 
-    listings = []
+    # ── Phase 1: classify + age-filter. Sold-removal is applied in Phase 2,
+    # AFTER sold-tracing, so the tracer can match against this run's own
+    # freshly-classified set instead of yesterday's on-disk listings.json —
+    # otherwise most genuine sold-matches never line up with what's actually
+    # about to be published, and a listing scraped-then-sold in the same run
+    # is never caught at all. ──
+    candidates = []
     expired_count = 0
-    sold_removed_count = 0
-    link_dead_count = 0
 
     for r in rows:
         text = r["message_text"] or ""
         brand = extract_brand(text)
         price = filt_extract_price(text, convert_to_sgd=True)
         cond = extract_condition(text)
-        listing_id = f"{r['channel_handle']}-{r['message_id']}"
         listing_date = r["posted_at"][:10] if r["posted_at"] else None
 
         if not (brand or price) or not is_watch_listing(text):
@@ -91,13 +73,8 @@ def export_listings(max_age_days=14, link_check=False, sold_trace=True):
             expired_count += 1
             continue
 
-        # ── Sold tracer removal ──
-        if listing_id in removed_ids:
-            sold_removed_count += 1
-            continue
-
         model_name, _ = extract_model(text, brand)
-        listings.append({
+        candidates.append({
             "i": r["id"],
             "c": r["channel_handle"],
             "m": r["message_id"],
@@ -112,7 +89,38 @@ def export_listings(max_age_days=14, link_check=False, sold_trace=True):
             "l": f"https://t.me/s/{r['channel_handle']}/{r['message_id']}",
         })
 
+    # ── Phase 2: sold-trace against this run's own candidates, then filter ──
+    removed_ids = set()
+    removed_reasons = {}
+    if sold_trace:
+        try:
+            from sold_tracer import trace_sold_messages
+            trace_result = trace_sold_messages(str(DB), listings=candidates)
+            removed_ids = set(trace_result.get("removed_ids", []))
+            removed_reasons = trace_result.get("reasons", {})
+            print(f"Sold tracer: marked {len(removed_ids)} listings for removal")
+        except ImportError as e:
+            print(f"Sold tracer unavailable: {e}")
+
+    # Carry over any removals from previous runs the fresh trace didn't re-derive
+    if REMOVED_IN.exists():
+        prev = json.loads(REMOVED_IN.read_text())
+        for rid in prev.get("removed_ids", []):
+            removed_ids.add(rid)
+            if rid not in removed_reasons and rid in prev.get("reasons", {}):
+                removed_reasons[rid] = prev["reasons"][rid]
+
+    listings = []
+    sold_removed_count = 0
+    for c in candidates:
+        listing_id = f"{c['c']}-{c['m']}"
+        if listing_id in removed_ids:
+            sold_removed_count += 1
+            continue
+        listings.append(c)
+
     # ── Link checking ──
+    link_dead_count = 0
     if link_check:
         print(f"Verifying {len(listings)} listing links...")
         verified = []

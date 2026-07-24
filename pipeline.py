@@ -2,14 +2,20 @@
 """
 SG Luxury Watch Index — Full Pipeline
 =====================================
-Runs scraper → export listings → recalculate index.
-Called hourly by automation (ae2776ca).
+Runs scraper → export listings → recalculate index → anomaly check.
+Called twice daily by automation (ae2776ca), which reads this script's
+stdout to compose the Telegram summary sent to @steamboat0x0 — there's no
+direct Telegram integration here, so anomaly signals are surfaced by
+printing them clearly rather than sending anything ourselves.
 """
 
-import subprocess, sys
+import json, subprocess, sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+
+# Day-over-day composite index move beyond this is flagged for review.
+INDEX_SWING_ALERT_PCT = 8.0
 
 def run_step(name, cmd):
     print(f"\n{'='*60}")
@@ -27,6 +33,56 @@ def run_step(name, cmd):
         print(f"  ✅ {name} complete")
     return result.returncode
 
+def check_anomalies():
+    """Lightweight data-quality signals for whoever reads this run's output.
+    Never blocks or drops anything — just calls out what's worth a look."""
+    print(f"\n{'='*60}")
+    print(f"  STEP: Anomaly check")
+    print(f"{'='*60}")
+    flags = []
+
+    listings_path = ROOT / "data" / "listings.json"
+    if listings_path.exists():
+        listings = json.loads(listings_path.read_text())
+        null_brand = [l for l in listings if not l.get("b")]
+        print(f"  Listings: {len(listings)} total, {len(null_brand)} with no resolved brand")
+        if null_brand:
+            flags.append(
+                f"{len(null_brand)} published listing(s) have no resolved brand "
+                f"(a classified watch should always resolve one — check parser/brands.py "
+                f"coverage). Example: {null_brand[0].get('t', '')[:80]!r}"
+            )
+
+    removed_path = ROOT / "data" / "removed.json"
+    if removed_path.exists():
+        removed = json.loads(removed_path.read_text())
+        strategies = removed.get("strategies", {})
+        candidates_found = sum(strategies.values())
+        total_removed = removed.get("total_removed", 0)
+        print(f"  Sold tracer: {candidates_found} candidate match(es) found, {total_removed} removed")
+        if candidates_found and total_removed != candidates_found:
+            flags.append(
+                f"Sold tracer found {candidates_found} candidate match(es) but only "
+                f"{total_removed} were actually removed — investigate the gap."
+            )
+
+    index_path = ROOT / "data" / "index.json"
+    if index_path.exists():
+        index = json.loads(index_path.read_text())
+        chg_pct = (index.get("composite") or {}).get("change_1d_pct")
+        outlier_count = index.get("price_outlier_count", 0)
+        print(f"  Index: {chg_pct}% day-over-day, {outlier_count} price outlier(s) flagged")
+        if chg_pct is not None and abs(chg_pct) > INDEX_SWING_ALERT_PCT:
+            flags.append(f"Composite index moved {chg_pct}% day-over-day (>{INDEX_SWING_ALERT_PCT}% threshold).")
+
+    if flags:
+        print("\n  ⚠ Anomalies flagged for review:")
+        for f in flags:
+            print(f"    - {f}")
+    else:
+        print("\n  ✅ No anomalies flagged")
+    return flags
+
 def main():
     print(f"🚀 SG-LWIX Pipeline — {__import__('datetime').datetime.now().isoformat()}")
 
@@ -35,6 +91,9 @@ def main():
 
     # Step 2: Export filtered listings JSON
     run_step("Export listings", "python3 index/export_pipeline.py")
+
+    # Step 3: Surface data-quality anomalies for review
+    check_anomalies()
 
     print("\n✅ Pipeline complete.")
 

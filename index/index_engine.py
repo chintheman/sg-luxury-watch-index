@@ -26,6 +26,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "parser"))
 try:
     from filter import extract_price, extract_condition, is_watch_listing
+    from brands import match_brand as extract_brand
     HAS_FILTER = True
 except ImportError:
     HAS_FILTER = False
@@ -49,10 +50,11 @@ PRESTIGE = {
     "Patek Philippe": 10, "Richard Mille": 10, "A. Lange & Sohne": 9.5,
     "Audemars Piguet": 9, "Vacheron Constantin": 9, "Breguet": 8.5,
     "Rolex": 8, "H. Moser": 8, "Blancpain": 7.5,
-    "Jaeger-LeCoultre": 7, "Girard-Perregaux": 7, "Ulysse Nardin": 6.5,
-    "Cartier": 6.5, "Chopard": 6, "Zenith": 6,
-    "IWC": 5.5, "Panerai": 5.5, "Bulgari": 5.5,
-    "Omega": 5, "Grand Seiko": 5,
+    "Jaeger-LeCoultre": 7, "Girard-Perregaux": 7, "Gerald Genta": 7,
+    "Parmigiani Fleurier": 6.5, "Ulysse Nardin": 6.5, "Roger Dubuis": 6.5,
+    "Cartier": 6.5, "Chopard": 6, "Zenith": 6, "Louis Moinet": 6,
+    "IWC": 5.5, "Panerai": 5.5, "Bulgari": 5.5, "Glashutte Original": 5.5,
+    "Omega": 5, "Grand Seiko": 5, "Chanel": 4.5, "Louis Erard": 3.5,
     "Breitling": 4.5, "Hublot": 4.5, "Tudor": 4,
     "TAG Heuer": 3.5, "Bell & Ross": 3.5,
     "Franck Muller": 3, "Seiko": 2,
@@ -306,20 +308,27 @@ def fill_series(series):
             result.append(pt)
     return result
 
-def extract_brand(text):
-    if not text:
-        return None
-    BRANDS = ["Rolex","Patek Philippe","Audemars Piguet","Omega","Cartier","Tudor","Breitling","Jaeger-LeCoultre","Panerai","IWC","Hublot","TAG Heuer","Vacheron Constantin","Grand Seiko","Seiko","Chopard","Blancpain","Breguet","Franck Muller","A. Lange & Sohne","Richard Mille","H. Moser","Bell & Ross","Bulgari","Bvlgari","Zenith","Ulysse Nardin","Girard-Perregaux","Piaget","Longines","Tissot","Hamilton","Oris","Nomos","Corum","MB&F","Sinn","Swarovski","Gucci","Hermes","Montblanc"]
-    for b in BRANDS:
-        if b.lower() in text.lower():
-            return b
-    # Short abbreviations — word boundary only
-    u = text.upper()
-    abbrs = [("AP", "Audemars Piguet"), ("RM", "Richard Mille"), ("JLC", "Jaeger-LeCoultre"), ("GS", "Grand Seiko")]
-    for abbr, full in abbrs:
-        if re.search(r'\b' + abbr + r'\b', u):
-            return full
-    return None
+OUTLIER_LOW_MULT = 0.2
+OUTLIER_HIGH_MULT = 5.0
+
+
+def find_price_outliers(daily_by_brand, baseline_median,
+                         low_mult=OUTLIER_LOW_MULT, high_mult=OUTLIER_HIGH_MULT):
+    """Flag same-day per-brand prices far outside that brand's long-run
+    baseline median. Log-only signal — callers should keep these listings in
+    the index (the median is already outlier-resilient) and surface the flags
+    for review rather than dropping anything."""
+    outliers = []
+    for date, by_brand in daily_by_brand.items():
+        for brand, prices in by_brand.items():
+            base = baseline_median.get(brand)
+            if not base:
+                continue
+            for p in prices:
+                if p < base * low_mult or p > base * high_mult:
+                    outliers.append({"date": date, "brand": brand, "price": p, "baseline": base})
+    return outliers
+
 
 def val_at_date(series, target_date):
     target = datetime.strptime(target_date, "%Y-%m-%d")
@@ -417,6 +426,17 @@ def build_indices():
     daily_by_brand = defaultdict(lambda: defaultdict(list))
     for r in records:
         daily_by_brand[r["date"]][r["brand"]].append(r["price"])
+
+    # ── Outlier flagging (log-only, never dropped from the index) ──
+    # A single junk/mistyped price can still skew a low-sample-count brand's
+    # daily median. Flag anything far outside that brand's long-run baseline
+    # for review, without silently excluding real-but-unusual listings.
+    price_outliers = find_price_outliers(daily_by_brand, baseline_median)
+    if price_outliers:
+        print(f"Flagged {len(price_outliers)} price outlier(s) (outside "
+              f"{OUTLIER_LOW_MULT}x-{OUTLIER_HIGH_MULT}x brand baseline) — "
+              f"kept in index, listed for review")
+
     # Phase 4b: Build 3-day rolling windows (pool [date-2, date])
     dates_sorted = sorted(daily_by_brand.keys())
     windowed_by_brand = defaultdict(lambda: defaultdict(list))
@@ -701,6 +721,8 @@ def build_indices():
             for b, c, n in brand_contribs[:8]
         ],
         "insights": insights,
+        "price_outliers": price_outliers[-200:],
+        "price_outlier_count": len(price_outliers),
     }
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
