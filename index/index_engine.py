@@ -377,6 +377,22 @@ def find_price_outliers(daily_by_brand, baseline_median,
     return outliers
 
 
+def compute_baseline_median(prices, min_samples=None,
+                             low_mult=OUTLIER_LOW_MULT, high_mult=OUTLIER_HIGH_MULT):
+    """Outlier-resistant baseline median for one brand's first-appearance
+    window. Returns (value, outliers_excluded_count), or None if there
+    aren't enough samples to baseline at all. Falls back to the unfiltered
+    median if excluding outliers would drop below min_samples."""
+    min_samples = MIN_BASELINE_SAMPLES if min_samples is None else min_samples
+    if len(prices) < min_samples:
+        return None
+    raw_median = median(prices)
+    filtered = [p for p in prices if low_mult * raw_median <= p <= high_mult * raw_median]
+    if len(filtered) >= min_samples:
+        return median(filtered), len(prices) - len(filtered)
+    return raw_median, 0
+
+
 def val_at_date(series, target_date):
     target = datetime.strptime(target_date, "%Y-%m-%d")
     best = None
@@ -478,15 +494,27 @@ def build_indices():
         if r["brand"] not in brand_first_seen:
             brand_first_seen[r["brand"]] = r["date"]
 
+    # Unlike the daily outlier flag (log-only — a bad price is diluted by
+    # tomorrow's window and gets flagged again for review, it's never the
+    # only thing setting a number), a baseline outlier is effectively
+    # permanent: it's computed from a brand's first ~90 days once and every
+    # later day's ratio is measured against it forever. So here outliers are
+    # actually excluded before taking the median, not just flagged.
     baseline_median = {}
+    baseline_outliers_excluded = 0
     for brand in all_brands:
         first = brand_first_seen[brand]
         first_dt = datetime.strptime(first, "%Y-%m-%d")
         window_end = (first_dt + timedelta(days=180)).strftime("%Y-%m-%d")
         prices = [r["price"] for r in records
                    if r["brand"] == brand and r["date"] <= window_end]
-        if len(prices) >= MIN_BASELINE_SAMPLES:
-            baseline_median[brand] = median(prices)
+        result = compute_baseline_median(prices)
+        if result is not None:
+            value, excluded = result
+            baseline_median[brand] = value
+            baseline_outliers_excluded += excluded
+    if baseline_outliers_excluded:
+        print(f"Excluded {baseline_outliers_excluded} outlier price(s) from baseline computation")
 
     print(f"Brands with baseline: {len(baseline_median)} of {len(all_brands)}")
     missing = all_brands - set(baseline_median.keys())

@@ -248,3 +248,47 @@ def test_retail_coverage_surfaces_concentration(tmp_path, monkeypatch):
     assert coverage["top_brand_share_pct"] > 50
     # Louis Erard has zero RETAIL_PRICES entries, so it can never match.
     assert coverage["matched_records"] < output["meta"]["total_records"]
+
+
+# ── Baseline outlier exclusion ──────────────────────────────────────────
+# A baseline is computed once from a brand's first ~90 days and every later
+# day is measured against it forever, unlike the daily flag which is
+# log-only. A single bad scrape in that window used to be permanently
+# baked into the baseline with no filtering at all.
+from index.index_engine import compute_baseline_median
+
+
+def test_compute_baseline_median_excludes_outlier():
+    # Median of all 5 (with the $500 outlier) is 16000; median of the 4
+    # real prices alone is 16050 — different, proving exclusion happened.
+    prices = [16000, 16100, 15900, 16200, 500]
+
+    value, excluded = compute_baseline_median(prices)
+
+    assert excluded == 1
+    assert value == 16050
+
+
+def test_compute_baseline_median_no_outliers_unaffected():
+    prices = [16000, 16100, 15900, 16200]
+
+    value, excluded = compute_baseline_median(prices)
+
+    assert excluded == 0
+    assert value == median(prices)
+
+
+def test_compute_baseline_median_falls_back_when_filtering_leaves_too_few():
+    # Only 3 samples, one is an outlier — excluding it would drop below
+    # MIN_BASELINE_SAMPLES, so fall back to the raw (unfiltered) median
+    # rather than refusing to baseline the brand at all.
+    prices = [16000, 16100, 500]
+
+    value, excluded = compute_baseline_median(prices, min_samples=3)
+
+    assert excluded == 0
+    assert value == median(prices)
+
+
+def test_compute_baseline_median_returns_none_below_min_samples():
+    assert compute_baseline_median([16000, 16100], min_samples=3) is None
