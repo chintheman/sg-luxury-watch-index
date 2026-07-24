@@ -206,3 +206,45 @@ def test_first_computed_differs_from_anchor_date_when_undersubscribed(tmp_path, 
     assert fc is not None
     assert fc["value"] is not None
     assert fc["brands_tracked"] >= 3
+
+
+# ── Retail-data coverage transparency ───────────────────────────────────
+# The audit found the "secondary vs retail" headline stat reads as
+# market-wide but is structurally dominated by whichever brands have
+# retail reference data at all (usually Rolex). Surfacing coverage/
+# concentration explicitly rather than hiding it behind a single average.
+
+def test_retail_coverage_surfaces_concentration(tmp_path, monkeypatch):
+    db_path = tmp_path / "listings.db"
+    out_path = tmp_path / "index.json"
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        """CREATE TABLE raw_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            channel_handle TEXT NOT NULL,
+            message_id INTEGER NOT NULL,
+            posted_at TEXT NOT NULL,
+            message_text TEXT,
+            UNIQUE(channel_handle, message_id)
+        )"""
+    )
+    next_id = 1
+    # Rolex has real RETAIL_PRICES entries and heavy volume; Louis Erard has
+    # none at all — deliberately lopsided, like the real data.
+    next_id = _seed_baseline(conn, "Rolex", 16000, next_id, n=8)
+    next_id = _seed_baseline(conn, "Omega", 5000, next_id, n=4)
+    next_id = _seed_baseline(conn, "Louis Erard", 3000, next_id, n=4)
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(ie, "DB", db_path)
+    monkeypatch.setattr(ie, "OUT", out_path)
+    ie.build_indices()
+
+    import json
+    output = json.loads(out_path.read_text())
+    coverage = output["retail_spread"]["coverage"]
+    assert coverage["top_brand"] == "Rolex"
+    assert coverage["top_brand_share_pct"] > 50
+    # Louis Erard has zero RETAIL_PRICES entries, so it can never match.
+    assert coverage["matched_records"] < output["meta"]["total_records"]

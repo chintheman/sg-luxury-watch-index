@@ -383,9 +383,10 @@ def build_indices():
         price = extract_price(text)
         if not brand or not price or not (500 <= price <= 500000):
             return None
+        retail, retail_method = get_retail_price_smart(brand, text)
         return {
             "brand": brand, "price": price, "cond": extract_condition(text),
-            "date": date, "retail": get_retail_price(brand, text),
+            "date": date, "retail": retail, "retail_method": retail_method,
         }
 
     for ch, mid, ts, text in rows:
@@ -418,6 +419,32 @@ def build_indices():
     print(f"Priced records: {len(records)}")
     print(f"Date range: {all_dates[0]} → {all_dates[-1]} ({len(all_dates)} days)")
     print(f"Brands: {len(all_brands)}")
+
+    # ── Retail-data coverage (feeds retail_spread's insight text honestly) ──
+    # RETAIL_PRICES only has real reference/keyword entries for ~23 of the
+    # brands tracked; the rest never resolve a retail price at all. Even
+    # among brands that do have data, most matches fall through to a crude
+    # brand-wide average (Stage 3) rather than a real ref/model match. And
+    # since Rolex alone is typically the majority of all listings, a
+    # "secondary vs retail" headline stat is easy to mistake for a
+    # market-wide figure when it's actually dominated by whichever brands
+    # happen to have retail data *and* volume — usually Rolex first.
+    retail_method_counts = Counter(r["retail_method"] for r in records if r.get("retail_method"))
+    retail_brand_counts = Counter(r["brand"] for r in records if r.get("retail") is not None)
+    retail_matched_total = sum(retail_brand_counts.values())
+    top_retail_brand, top_retail_count = (retail_brand_counts.most_common(1) or [(None, 0)])[0]
+    retail_coverage = {
+        "brands_with_retail_data": sum(1 for v in RETAIL_PRICES.values() if v),
+        "brands_tracked": len(all_brands),
+        "matched_records": retail_matched_total,
+        "matched_records_pct": round(100 * retail_matched_total / len(records), 1) if records else 0,
+        "match_method_counts": dict(retail_method_counts),
+        "top_brand": top_retail_brand,
+        "top_brand_share_pct": round(100 * top_retail_count / retail_matched_total, 1) if retail_matched_total else 0,
+    }
+    print(f"Retail coverage: {retail_coverage['matched_records_pct']}% of records matched "
+          f"({dict(retail_method_counts)}), top brand {top_retail_brand} = "
+          f"{retail_coverage['top_brand_share_pct']}% of matches")
 
     # Phase 2: Per-brand baselines (first 90 days of each brand)
     brand_first_seen = {}
@@ -712,9 +739,17 @@ def build_indices():
             f"A widening gap signals stronger demand for unworn pieces."
         )
     if retail_spread is not None:
+        concentration_note = (
+            f" Based mostly on {retail_coverage['top_brand']} "
+            f"({retail_coverage['top_brand_share_pct']:.0f}% of matched records) — "
+            f"not an even market-wide sample."
+            if retail_coverage["top_brand_share_pct"] >= 50 else ""
+        )
         insights["retail"] = (
             f"Secondary-market prices average {abs(retail_spread):.1f}% "
-            f"{'below' if retail_spread > 0 else 'above'} retail. "
+            f"{'below' if retail_spread > 0 else 'above'} retail "
+            f"(of the {retail_coverage['matched_records_pct']:.0f}% of listings with a "
+            f"known retail price).{concentration_note} "
             f"{'Discount' if retail_spread > 0 else 'Premium'} to authorised dealer pricing."
         )
     if avail_latest is not None:
@@ -770,7 +805,7 @@ def build_indices():
             "new": {"current": new_latest, "series": new_idx_list[-730:]},
             "spread": cond_spread,
         },
-        "retail_spread": {"current": retail_spread, "series": spread_series[-730:]},
+        "retail_spread": {"current": retail_spread, "series": spread_series[-730:], "coverage": retail_coverage},
         "availability": {"current": avail_latest, "series": availability[-730:]},
         "brand_subindices": {
             brand: {"current": bidx[-1]["value"] if bidx else None, "series": bidx[-730:] if bidx else []}
