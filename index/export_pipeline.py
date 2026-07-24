@@ -20,6 +20,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "parser"))
 
 from filter import is_watch_listing, extract_price as filt_extract_price, extract_condition, extract_model
+from batch import is_batch_listing_post, split_batch_items, listing_key
 from index.index_engine import extract_brand, build_indices
 
 import sqlite3
@@ -58,14 +59,51 @@ def export_listings(max_age_days=14, link_check=False, sold_trace=True):
     candidates = []
     expired_count = 0
 
-    for r in rows:
-        text = r["message_text"] or ""
+    def _classify(text):
+        """Returns a candidate dict (minus i/c/m/l/d) or None. Shared by both
+        single-item posts and each sub-item of a split batch post so both go
+        through identical brand/price/accessory/noise checks."""
         brand = extract_brand(text)
         price = filt_extract_price(text, convert_to_sgd=True)
-        cond = extract_condition(text)
-        listing_date = r["posted_at"][:10] if r["posted_at"] else None
-
         if not (brand or price) or not is_watch_listing(text):
+            return None
+        cond = extract_condition(text)
+        model_name, _ = extract_model(text, brand)
+        return {"t": text[:200], "p": price, "b": brand, "n": cond, "md": model_name}
+
+    for r in rows:
+        text = r["message_text"] or ""
+        listing_date = r["posted_at"][:10] if r["posted_at"] else None
+        link = f"https://t.me/s/{r['channel_handle']}/{r['message_id']}"
+
+        if is_batch_listing_post(text):
+            # One raw message, many watches — only items marked available in
+            # the post's own status marker become candidates; sold ones are
+            # simply not published (see parser/batch.py for why this exists).
+            for item in split_batch_items(text):
+                if not item["available"]:
+                    continue
+                fields = _classify(item["body"])
+                if fields is None:
+                    continue
+                if listing_date and listing_date < cutoff_date:
+                    expired_count += 1
+                    continue
+                candidates.append({
+                    "i": r["id"],
+                    "c": r["channel_handle"],
+                    "m": r["message_id"],
+                    "si": item["item_number"],
+                    "d": listing_date,
+                    "f": r["photos_count"] or 0,
+                    "v": r["views"],
+                    "l": link,
+                    **fields,
+                })
+            continue
+
+        fields = _classify(text)
+        if fields is None:
             continue
 
         # ── Time-based expiry ──
@@ -73,20 +111,15 @@ def export_listings(max_age_days=14, link_check=False, sold_trace=True):
             expired_count += 1
             continue
 
-        model_name, _ = extract_model(text, brand)
         candidates.append({
             "i": r["id"],
             "c": r["channel_handle"],
             "m": r["message_id"],
             "d": listing_date,
-            "t": text[:200],
             "f": r["photos_count"] or 0,
             "v": r["views"],
-            "p": price,
-            "b": brand,
-            "n": cond,
-            "md": model_name,
-            "l": f"https://t.me/s/{r['channel_handle']}/{r['message_id']}",
+            "l": link,
+            **fields,
         })
 
     # ── Phase 2: sold-trace against this run's own candidates, then filter ──
@@ -113,7 +146,7 @@ def export_listings(max_age_days=14, link_check=False, sold_trace=True):
     listings = []
     sold_removed_count = 0
     for c in candidates:
-        listing_id = f"{c['c']}-{c['m']}"
+        listing_id = listing_key(c)
         if listing_id in removed_ids:
             sold_removed_count += 1
             continue

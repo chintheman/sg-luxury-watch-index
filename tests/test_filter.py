@@ -122,3 +122,33 @@ def test_abbreviations_still_word_bounded():
     assert match_brand("AP Royal Oak 15400 Price: $45,000") == "Audemars Piguet"
     # "gap" must not spuriously match the "AP" abbreviation
     assert match_brand("Massive gap in the market Price: $100") is None
+
+
+# ── Cross-brand mention hijacking (a Rolex listing that name-drops another
+# brand as a comparison must not get attributed to the mentioned brand) ────
+
+def test_earliest_mentioned_brand_wins_over_a_later_comparison():
+    from brands import match_brand
+
+    assert match_brand(
+        "Rolex Daytona 116500LN Price: $45,000 (similar vibe to a Vacheron "
+        "Constantin Overseas but way more iconic)"
+    ) == "Rolex"
+    assert match_brand(
+        "Patek Philippe Nautilus 5711 Price: $180,000. Comes with overseas "
+        "shipping available worldwide."
+    ) == "Patek Philippe"
+    assert match_brand(
+        "Omega Speedmaster Price: $9,000 (not to be confused with a Tudor "
+        "Black Bay, totally different watch)"
+    ) == "Omega"
+
+
+def test_position_tiebreak_prefers_more_specific_longer_match():
+    from brands import match_brand
+
+    # "Grand Seiko" must win over the "Seiko" it contains as a substring
+    # when both start at the same position.
+    assert match_brand("Grand Seiko SBGA211 Price: $5,000") == "Grand Seiko"
+    # Plain "Seiko" with no "Grand" prefix must still resolve correctly.
+    assert match_brand("Seiko 5 Sports SRPD Price: $300") == "Seiko"

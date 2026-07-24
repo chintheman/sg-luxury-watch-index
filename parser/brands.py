@@ -107,19 +107,41 @@ _LOOKUP = sorted(
 
 
 def match_brand(text):
-    """Return the canonical brand name if any known brand/alias appears in
-    text, else None."""
+    """Return the canonical brand name for the *first-mentioned* brand in
+    text (earliest position wins, longer match breaks a tie), or None.
+
+    Position, not just presence, matters: dealers put the item's actual
+    brand at/near the start of a listing. A brand mentioned later — e.g.
+    "Rolex Daytona ... similar vibe to a Vacheron Constantin Overseas" — is
+    far more likely to be an incidental comparison than the item being sold.
+    Matching on presence alone (the old behavior) mis-attributed listings
+    like that to whichever brand happened to be checked, regardless of
+    where it actually appeared in the text.
+    """
     if not text:
         return None
     norm = _normalize(text)
+    best_pos, best_len, best_canonical = None, -1, None
     for norm_variant, canonical in _LOOKUP:
-        if norm_variant and norm_variant in norm:
-            return canonical
+        if not norm_variant:
+            continue
+        idx = norm.find(norm_variant)
+        if idx == -1:
+            continue
+        if best_pos is None or idx < best_pos or (idx == best_pos and len(norm_variant) > best_len):
+            best_pos, best_len, best_canonical = idx, len(norm_variant), canonical
+    if best_canonical is not None:
+        return best_canonical
+
+    # Abbreviations only as a fallback when no full brand name matched —
+    # weaker signal, but still prefer whichever appears earliest.
     upper = text.upper()
+    best_abbr_pos, best_abbr_canonical = None, None
     for abbr, canonical in ABBREVIATIONS.items():
-        if re.search(r'\b' + abbr + r'\b', upper):
-            return canonical
-    return None
+        m = re.search(r'\b' + abbr + r'\b', upper)
+        if m and (best_abbr_pos is None or m.start() < best_abbr_pos):
+            best_abbr_pos, best_abbr_canonical = m.start(), canonical
+    return best_abbr_canonical
 
 
 def has_brand(text):

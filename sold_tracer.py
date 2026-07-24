@@ -4,8 +4,11 @@ Sold Tracer — cross-references SOLD messages against active listings.
 
 Strategies (in priority order):
   1. Item number match (GML#### → same item number in active listing)
-  2. Batch SOLD parsing (sgwatchinsider: parse which line items are sold)
-  3. Brand + model match (same channel, same brand/model, SOLD posted AFTER listing)
+  2. Brand + model match (same channel, same brand/model, SOLD posted AFTER listing)
+
+(Batch "[WATCH DEALS ...]" roundup posts are handled separately — see
+parser/batch.py — since each item's own status marker is a more reliable
+sold signal than cross-referencing a later SOLD message.)
 
 Output: data/removed.json — {removed_ids: [...], reasons: {id: reason}}
 """
@@ -17,6 +20,7 @@ from collections import defaultdict
 from parser.filter import extract_price, extract_condition
 from parser.filter import extract_model as filt_extract_model
 from parser.brands import match_brand as extract_brand_local
+from parser.batch import listing_key
 
 SGT = timezone(timedelta(hours=8))
 ROOT = Path(__file__).resolve().parent
@@ -72,7 +76,14 @@ def trace_sold_messages(db_path=None, listings=None, listings_path=None):
     # which meant most matches were against listings that had already aged
     # out of the 14-day display window regardless — wasted work, and a
     # source of stale/coincidental brand+price false-positive matches.)
-    current_ids = {f"{l.get('c', '')}-{l.get('m')}" for l in active}
+    #
+    # Split-batch sub-items (listing_key() returns "c-m-si" for those) never
+    # match a raw message's plain "c-m" id below, so they're intentionally
+    # excluded from this cross-message matching pool — their own SOLD status
+    # already comes straight from the post itself (see parser/batch.py) and
+    # is refreshed every time the dealer reposts, so cross-referencing them
+    # against separate SOLD messages here would be redundant.
+    current_ids = {listing_key(l) for l in active}
 
     # Get all messages (last LOOKBACK_DAYS) — SOLD messages themselves are
     # still searched across the full window, since a sold post can lag the
@@ -109,7 +120,7 @@ def trace_sold_messages(db_path=None, listings=None, listings_path=None):
             active_by_brand[(m["channel_handle"] or "").lower(), brand].append(m)
 
     removed = {}  # listing_id → reason
-    strategies = {"item_number": 0, "brand_model": 0, "batch_sold": 0}
+    strategies = {"item_number": 0, "brand_model": 0}
 
     for sm in sold_msgs:
         s_text = sm["message_text"] or ""
@@ -127,41 +138,16 @@ def trace_sold_messages(db_path=None, listings=None, listings_path=None):
                         removed[c_id] = f"Item {item} sold ({sm['message_id']})"
                         strategies["item_number"] += 1
 
-        # ── Strategy 2: Batch SOLD parsing (sgwatchinsider) ──
-        if s_channel == "sgwatchinsider":
-            # Parse WATCH DEALS format: numbered items with ❌ markers
-            lines = s_text.split('\n')
-            sold_indices = set()
-            for i, line in enumerate(lines):
-                stripped = line.strip()
-                if '❌' in stripped or 'SOLD' in stripped.upper():
-                    sold_indices.add(i)
-                # Check for numbered items: (1), 1), 1., etc.
-                m_num = re.match(r'^(?:\(?(\d+)\)?[\.\s\)])', stripped)
-                if m_num:
-                    idx = int(m_num.group(1))
-                    if any('❌' in lines[j].strip() or 'SOLD' in lines[j].strip().upper()
-                           for j in range(max(0, i - 1), min(len(lines), i + 2))):
-                        sold_indices.add(idx)
-
-            if sold_indices:
-                # Find the batch listing in active candidates
-                for ac in active_candidates:
-                    if ac["channel_handle"] != sm["channel_handle"]:
-                        continue
-                    ac_text = ac["message_text"] or ""
-                    if "WATCH DEALS" not in ac_text.upper():
-                        continue
-                    # Check if this batch has sold items
-                    ac_lines = ac_text.split('\n')
-                    for idx in sold_indices:
-                        for line in ac_lines:
-                            if re.match(rf'^[\s]*\(?{idx}\)?', line.strip()):
-                                c_id = f"{ac['channel_handle']}-{ac['message_id']}"
-                                if c_id not in removed:
-                                    removed[c_id] = f"Batch item #{idx} marked sold ({sm['message_id']})"
-                                    strategies["batch_sold"] += 1
-                                break
+        # Strategy 2 (cross-message batch-SOLD parsing) was removed: every
+        # "[WATCH DEALS ...]" batch post contains the word "SOLD" somewhere
+        # (older items are kept for reference), so it always landed in
+        # sold_msgs above and never in active_candidates — this strategy
+        # could never find a batch listing to match against, confirmed
+        # against the full live corpus (0/95 batch posts ever appeared in
+        # active_candidates). parser/batch.py now splits these posts into
+        # per-item listings directly from each item's own status marker,
+        # which makes this cross-message approach unnecessary as well as
+        # non-functional.
 
         # ── Strategy 3: Brand + model match (same channel, sold after listing) ──
         s_brand = extract_brand_local(s_text)
@@ -211,7 +197,6 @@ def trace_sold_messages(db_path=None, listings=None, listings_path=None):
     print(f"Sold tracer: removed {len(removal_ids)} listings")
     print(f"  Item number matches: {strategies['item_number']}")
     print(f"  Brand/model matches: {strategies['brand_model']}")
-    print(f"  Batch SOLD: {strategies['batch_sold']}")
 
     return output
 
