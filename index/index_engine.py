@@ -19,13 +19,15 @@ Output: data/index.json (consumed by /api/watch-index → /watches)
 
 import sqlite3, json, re, sys
 from datetime import datetime, timedelta, timezone
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 from statistics import median
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "parser"))
 try:
     from filter import extract_price, extract_condition, is_watch_listing
+    from brands import match_brand as extract_brand
+    from batch import is_batch_listing_post, split_batch_items
     HAS_FILTER = True
 except ImportError:
     HAS_FILTER = False
@@ -33,6 +35,8 @@ except ImportError:
     def extract_price(t): return None
     def extract_condition(t): return "u"
     def is_watch_listing(t): return True
+    def is_batch_listing_post(t): return False
+    def split_batch_items(t): return []
 
 BASE = Path(__file__).resolve().parent.parent
 DB = BASE / "data" / "listings.db"
@@ -40,19 +44,71 @@ OUT = BASE / "data" / "index.json"
 
 ANCHOR_VALUE = 1.0
 MIN_BASELINE_SAMPLES = 3
-MIN_PER_BRAND = 1
+# A single listing determining a brand's entire daily-window contribution
+# was the mechanism behind confirmed ±100% single-brand-day swings — over
+# the full history, 53% of (date, brand) window-pools had exactly 1 sample.
+# 3 is the textbook-correct value for outlier resistance (a median of 3
+# can't be dragged by one bad price; a median of 2 is just an average and
+# still is). Measured against the *full* history this drops fresh-day
+# coverage from 44% to 15%, which looks alarming — but that average is
+# dominated by the scraper's thin early months. Measured against the
+# actually-relevant recent window it holds up fine: 87% fresh over the last
+# 30 days, 76% over the last 90 (both better than MIN_PER_BRAND=2 gives on
+# the same recent windows). Re-check this if listing volume drops.
+MIN_PER_BRAND = 3
 MIN_BRANDS_PER_COMPOSITE = 3
 WINDOW_DAYS = 3
 
+# Condition (New vs Pre-Owned) sub-indices: only ~14% of listings are Brand
+# New, so they need a much wider pool than the main composite's 3-day
+# window to avoid a single listing swinging the day's value. 14-day window
+# + min 2 per brand is the fix path AGENTS.md documented but never wired
+# up; MIN_COND_BRANDS is an added guard so a day isn't computed from just
+# one brand even after widening the pool.
+COND_WINDOW_DAYS = 14
+MIN_COND_PER_BRAND = 2
+MIN_COND_BRANDS = 2
+
+# Availability score's ceiling — trailing window, not a fixed all-time max
+# (see the comment where this is used in build_indices() for why).
+AVAILABILITY_ROLLING_DAYS = 60
+
 # ── Prestige weights (0-10, from Chrono24 + horological consensus) ──
+# Gerald Genta, Parmigiani Fleurier, Roger Dubuis, Louis Moinet, Glashutte
+# Original, Chanel, and Louis Erard were added to close a "brand: null" gap
+# (real listings under these brands weren't recognized at all before). Their
+# weights were placed by cross-checking brand positioning against
+# independent horology sources rather than guessed cold:
+#   - Roger Dubuis / Parmigiani Fleurier (6.5): both consistently described
+#     as haute horlogerie tier — hand-finishing, complications, limited
+#     production — comparable to Girard-Perregaux (7) in exclusivity, placed
+#     slightly below it for lower brand recognition/heritage depth.
+#   - Gerald Genta (7): the eponymous designer of the AP Royal Oak and
+#     Patek Nautilus; LVMH-owned via La Fabrique du Temps. High design
+#     pedigree, but the brand itself has less market presence than GP/JLC.
+#   - Louis Moinet (6): "extremely interesting," limited/one-off production,
+#     but low mainstream brand recognition despite high-end positioning —
+#     placed with Chopard/Zenith rather than the haute horlogerie tier.
+#   - Glashutte Original (5.5): established German in-house manufacture,
+#     grouped with IWC/Panerai/Bulgari as respected-but-not-top-tier.
+#   - Chanel (4.5): explicitly framed in horology coverage as a fashion
+#     house watchmaking success (the J12's ceramic bracelet was genuinely
+#     influential) rather than a specialist horological manufacture —
+#     placed with Breitling/Hublot/Tudor, below Cartier/Bulgari.
+#   - Louis Erard (3.5): directly described as "entry-level-ish," explicitly
+#     marketed as an affordable alternative for Breguet/F.P. Journe admirers
+#     — placed with TAG Heuer/Bell & Ross.
+# Still ultimately subjective — worth a sanity pass from someone closer to
+# the SG secondary market than a web search.
 PRESTIGE = {
     "Patek Philippe": 10, "Richard Mille": 10, "A. Lange & Sohne": 9.5,
     "Audemars Piguet": 9, "Vacheron Constantin": 9, "Breguet": 8.5,
     "Rolex": 8, "H. Moser": 8, "Blancpain": 7.5,
-    "Jaeger-LeCoultre": 7, "Girard-Perregaux": 7, "Ulysse Nardin": 6.5,
-    "Cartier": 6.5, "Chopard": 6, "Zenith": 6,
-    "IWC": 5.5, "Panerai": 5.5, "Bulgari": 5.5,
-    "Omega": 5, "Grand Seiko": 5,
+    "Jaeger-LeCoultre": 7, "Girard-Perregaux": 7, "Gerald Genta": 7,
+    "Parmigiani Fleurier": 6.5, "Ulysse Nardin": 6.5, "Roger Dubuis": 6.5,
+    "Cartier": 6.5, "Chopard": 6, "Zenith": 6, "Louis Moinet": 6,
+    "IWC": 5.5, "Panerai": 5.5, "Bulgari": 5.5, "Glashutte Original": 5.5,
+    "Omega": 5, "Grand Seiko": 5, "Chanel": 4.5, "Louis Erard": 3.5,
     "Breitling": 4.5, "Hublot": 4.5, "Tudor": 4,
     "TAG Heuer": 3.5, "Bell & Ross": 3.5,
     "Franck Muller": 3, "Seiko": 2,
@@ -295,31 +351,61 @@ def get_retail_price(brand, text):
 
 # ── Gap filling ────────────────────────────────────────────────────
 def fill_series(series):
+    """Carry the last computed value forward through days that didn't
+    qualify (not enough brands/samples that day). Marks each carried-forward
+    point with stale=True so consumers — and the site — can tell a freshly
+    computed value apart from a repeat of an earlier one instead of both
+    looking identical, which is exactly the kind of silent-discontinuity gap
+    that erodes trust in a "daily" index once carry-forwards get frequent."""
     result = []
     last = None
     for pt in series:
         if pt["value"] is not None:
             last = pt["value"]
-        if last is not None:
-            result.append({**pt, "value": last})
+            result.append({**pt, "stale": False})
+        elif last is not None:
+            result.append({**pt, "value": last, "stale": True})
         else:
-            result.append(pt)
+            result.append({**pt, "stale": False})
     return result
 
-def extract_brand(text):
-    if not text:
+OUTLIER_LOW_MULT = 0.2
+OUTLIER_HIGH_MULT = 5.0
+
+
+def find_price_outliers(daily_by_brand, baseline_median,
+                         low_mult=OUTLIER_LOW_MULT, high_mult=OUTLIER_HIGH_MULT):
+    """Flag same-day per-brand prices far outside that brand's long-run
+    baseline median. Log-only signal — callers should keep these listings in
+    the index (the median is already outlier-resilient) and surface the flags
+    for review rather than dropping anything."""
+    outliers = []
+    for date, by_brand in daily_by_brand.items():
+        for brand, prices in by_brand.items():
+            base = baseline_median.get(brand)
+            if not base:
+                continue
+            for p in prices:
+                if p < base * low_mult or p > base * high_mult:
+                    outliers.append({"date": date, "brand": brand, "price": p, "baseline": base})
+    return outliers
+
+
+def compute_baseline_median(prices, min_samples=None,
+                             low_mult=OUTLIER_LOW_MULT, high_mult=OUTLIER_HIGH_MULT):
+    """Outlier-resistant baseline median for one brand's first-appearance
+    window. Returns (value, outliers_excluded_count), or None if there
+    aren't enough samples to baseline at all. Falls back to the unfiltered
+    median if excluding outliers would drop below min_samples."""
+    min_samples = MIN_BASELINE_SAMPLES if min_samples is None else min_samples
+    if len(prices) < min_samples:
         return None
-    BRANDS = ["Rolex","Patek Philippe","Audemars Piguet","Omega","Cartier","Tudor","Breitling","Jaeger-LeCoultre","Panerai","IWC","Hublot","TAG Heuer","Vacheron Constantin","Grand Seiko","Seiko","Chopard","Blancpain","Breguet","Franck Muller","A. Lange & Sohne","Richard Mille","H. Moser","Bell & Ross","Bulgari","Bvlgari","Zenith","Ulysse Nardin","Girard-Perregaux","Piaget","Longines","Tissot","Hamilton","Oris","Nomos","Corum","MB&F","Sinn","Swarovski","Gucci","Hermes","Montblanc"]
-    for b in BRANDS:
-        if b.lower() in text.lower():
-            return b
-    # Short abbreviations — word boundary only
-    u = text.upper()
-    abbrs = [("AP", "Audemars Piguet"), ("RM", "Richard Mille"), ("JLC", "Jaeger-LeCoultre"), ("GS", "Grand Seiko")]
-    for abbr, full in abbrs:
-        if re.search(r'\b' + abbr + r'\b', u):
-            return full
-    return None
+    raw_median = median(prices)
+    filtered = [p for p in prices if low_mult * raw_median <= p <= high_mult * raw_median]
+    if len(filtered) >= min_samples:
+        return median(filtered), len(prices) - len(filtered)
+    return raw_median, 0
+
 
 def val_at_date(series, target_date):
     target = datetime.strptime(target_date, "%Y-%m-%d")
@@ -338,26 +424,46 @@ def build_indices():
     ))
     conn.close()
 
-    # Phase 1: Parse all records
+    # Phase 1: Parse all records. Batch "roundup" posts (e.g. sgwatchinsider's
+    # "[WATCH DEALS ...]") are split into per-item candidates first — same as
+    # export_pipeline.py — since this function parses raw_messages
+    # independently rather than reusing export_pipeline's already-split
+    # listings. Without this the index and the published listings.json would
+    # silently run on divergently-filtered data.
     records = []
-    for ch, mid, ts, text in rows:
-        if not text:
-            continue
-        if HAS_FILTER and not is_watch_listing(text):
-            continue
+
+    def _record_from(text, date):
+        if not text or (HAS_FILTER and not is_watch_listing(text)):
+            return None
         brand = extract_brand(text)
         price = extract_price(text)
         if not brand or not price or not (500 <= price <= 500000):
+            return None
+        retail, retail_method = get_retail_price_smart(brand, text)
+        return {
+            "brand": brand, "price": price, "cond": extract_condition(text),
+            "date": date, "retail": retail, "retail_method": retail_method,
+        }
+
+    for ch, mid, ts, text in rows:
+        if not text:
             continue
-        cond = extract_condition(text)
-        retail = get_retail_price(brand, text)
         date = ts[:10]
         if date < "2025-01-01":
             continue
-        records.append({
-            "brand": brand, "price": price, "cond": cond,
-            "date": date, "retail": retail,
-        })
+
+        if HAS_FILTER and is_batch_listing_post(text):
+            for item in split_batch_items(text):
+                if not item["available"]:
+                    continue
+                rec = _record_from(item["body"], date)
+                if rec:
+                    records.append(rec)
+            continue
+
+        rec = _record_from(text, date)
+        if rec:
+            records.append(rec)
 
     if not records:
         print("ERROR: No priced records found.")
@@ -370,21 +476,59 @@ def build_indices():
     print(f"Date range: {all_dates[0]} → {all_dates[-1]} ({len(all_dates)} days)")
     print(f"Brands: {len(all_brands)}")
 
+    # ── Retail-data coverage (feeds retail_spread's insight text honestly) ──
+    # RETAIL_PRICES only has real reference/keyword entries for ~23 of the
+    # brands tracked; the rest never resolve a retail price at all. Even
+    # among brands that do have data, most matches fall through to a crude
+    # brand-wide average (Stage 3) rather than a real ref/model match. And
+    # since Rolex alone is typically the majority of all listings, a
+    # "secondary vs retail" headline stat is easy to mistake for a
+    # market-wide figure when it's actually dominated by whichever brands
+    # happen to have retail data *and* volume — usually Rolex first.
+    retail_method_counts = Counter(r["retail_method"] for r in records if r.get("retail_method"))
+    retail_brand_counts = Counter(r["brand"] for r in records if r.get("retail") is not None)
+    retail_matched_total = sum(retail_brand_counts.values())
+    top_retail_brand, top_retail_count = (retail_brand_counts.most_common(1) or [(None, 0)])[0]
+    retail_coverage = {
+        "brands_with_retail_data": sum(1 for v in RETAIL_PRICES.values() if v),
+        "brands_tracked": len(all_brands),
+        "matched_records": retail_matched_total,
+        "matched_records_pct": round(100 * retail_matched_total / len(records), 1) if records else 0,
+        "match_method_counts": dict(retail_method_counts),
+        "top_brand": top_retail_brand,
+        "top_brand_share_pct": round(100 * top_retail_count / retail_matched_total, 1) if retail_matched_total else 0,
+    }
+    print(f"Retail coverage: {retail_coverage['matched_records_pct']}% of records matched "
+          f"({dict(retail_method_counts)}), top brand {top_retail_brand} = "
+          f"{retail_coverage['top_brand_share_pct']}% of matches")
+
     # Phase 2: Per-brand baselines (first 90 days of each brand)
     brand_first_seen = {}
     for r in records:
         if r["brand"] not in brand_first_seen:
             brand_first_seen[r["brand"]] = r["date"]
 
+    # Unlike the daily outlier flag (log-only — a bad price is diluted by
+    # tomorrow's window and gets flagged again for review, it's never the
+    # only thing setting a number), a baseline outlier is effectively
+    # permanent: it's computed from a brand's first ~90 days once and every
+    # later day's ratio is measured against it forever. So here outliers are
+    # actually excluded before taking the median, not just flagged.
     baseline_median = {}
+    baseline_outliers_excluded = 0
     for brand in all_brands:
         first = brand_first_seen[brand]
         first_dt = datetime.strptime(first, "%Y-%m-%d")
         window_end = (first_dt + timedelta(days=180)).strftime("%Y-%m-%d")
         prices = [r["price"] for r in records
                    if r["brand"] == brand and r["date"] <= window_end]
-        if len(prices) >= MIN_BASELINE_SAMPLES:
-            baseline_median[brand] = median(prices)
+        result = compute_baseline_median(prices)
+        if result is not None:
+            value, excluded = result
+            baseline_median[brand] = value
+            baseline_outliers_excluded += excluded
+    if baseline_outliers_excluded:
+        print(f"Excluded {baseline_outliers_excluded} outlier price(s) from baseline computation")
 
     print(f"Brands with baseline: {len(baseline_median)} of {len(all_brands)}")
     missing = all_brands - set(baseline_median.keys())
@@ -417,6 +561,17 @@ def build_indices():
     daily_by_brand = defaultdict(lambda: defaultdict(list))
     for r in records:
         daily_by_brand[r["date"]][r["brand"]].append(r["price"])
+
+    # ── Outlier flagging (log-only, never dropped from the index) ──
+    # A single junk/mistyped price can still skew a low-sample-count brand's
+    # daily median. Flag anything far outside that brand's long-run baseline
+    # for review, without silently excluding real-but-unusual listings.
+    price_outliers = find_price_outliers(daily_by_brand, baseline_median)
+    if price_outliers:
+        print(f"Flagged {len(price_outliers)} price outlier(s) (outside "
+              f"{OUTLIER_LOW_MULT}x-{OUTLIER_HIGH_MULT}x brand baseline) — "
+              f"kept in index, listed for review")
+
     # Phase 4b: Build 3-day rolling windows (pool [date-2, date])
     dates_sorted = sorted(daily_by_brand.keys())
     windowed_by_brand = defaultdict(lambda: defaultdict(list))
@@ -425,6 +580,32 @@ def build_indices():
             wdate = dates_sorted[j]
             for brand, prices in daily_by_brand[wdate].items():
                 windowed_by_brand[date][brand].extend(prices)
+
+    # Availability score's ceiling: a rolling trailing max, not a fixed
+    # all-time max. The channel roster isn't constant over the ~250-day
+    # history (some channels went dormant, others only came online
+    # partway through, sgwatchinsider's batch-post splitting could start
+    # contributing more going forward) — an all-time max fixes the ceiling
+    # to whichever era happened to have the most channels scraping, which
+    # mechanically deflates every other era regardless of real listing
+    # volume, and silently re-inflates every time channel coverage grows.
+    # A trailing window means the ceiling reflects recent scraping
+    # capacity, so the score is closer to "activity vs. the recent norm"
+    # than "activity vs. this codebase's best-ever scrape."
+    # Calendar-day window, not an index-count window: dates_sorted only
+    # contains dates that actually have listings, so a large gap (real in
+    # this data — some stretches have no scraped activity for weeks) would
+    # otherwise let a stale date sit in an "N dates ago" window long past
+    # when it should have aged out on the calendar.
+    daily_totals = {d: sum(len(p) for p in daily_by_brand[d].values()) for d in dates_sorted}
+    rolling_max_by_date = {}
+    window_dq = deque()
+    for date in dates_sorted:
+        window_dq.append(date)
+        cutoff = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=AVAILABILITY_ROLLING_DAYS - 1)).strftime("%Y-%m-%d")
+        while window_dq and window_dq[0] < cutoff:
+            window_dq.popleft()
+        rolling_max_by_date[date] = max((daily_totals[d] for d in window_dq), default=1) or 1
 
     # Phase 5: Find anchor date (50%+ of baselined brands have appeared)
     anchor_date = None
@@ -453,6 +634,20 @@ def build_indices():
             records_by_date_cond[r["date"]][r["cond"]].append(r)
         if r["retail"]:
             records_by_date_retail[r["date"]].append(r)
+
+    # Condition (New vs Pre-Owned) sub-indices get their own wider pooling
+    # window: only ~14% of listings are Brand New, so a same-day-only pool
+    # (what the composite's 3-day WINDOW_DAYS would still be too tight for)
+    # swung the NEW index ±40% day to day — a single $45k Daytona landing on
+    # the same day as a $15k Datejust was enough to triple the day's median.
+    # This is the fix path documented in AGENTS.md but never implemented.
+    windowed_by_date_cond = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    for i, date in enumerate(dates_sorted):
+        for j in range(max(0, i - COND_WINDOW_DAYS + 1), i + 1):
+            wdate = dates_sorted[j]
+            for cond_code, recs in records_by_date_cond[wdate].items():
+                for r in recs:
+                    windowed_by_date_cond[date][cond_code][r["brand"]].append(r["price"])
 
     for date in dates_sorted:
         day = windowed_by_brand[date]
@@ -498,24 +693,24 @@ def build_indices():
             "value": retail_val,
         })
 
-        # Availability
-        total_day = sum(len(p) for p in day.values())
-        max_day = max(sum(len(p) for p in d.values()) for d in daily_by_brand.values()) or 1
-        availability.append({"date": date, "value": round(total_day / max_day * 100)})
+        # Availability — raw same-day count (not the 3-day-pooled `day`,
+        # which would blur this into a smoothed figure) against a trailing
+        # rolling ceiling rather than a fixed all-time one (see above).
+        availability.append({
+            "date": date,
+            "value": round(daily_totals[date] / rolling_max_by_date[date] * 100),
+        })
 
-        # Condition sub-indices
+        # Condition sub-indices — pooled over COND_WINDOW_DAYS, see above.
         for cond_code, output_list in [("p", preowned), ("n", new_idx_list)]:
-            cond_prices = defaultdict(list)
-            for r in records_by_date_cond[date][cond_code]:
-                cond_prices[r["brand"]].append(r["price"])
+            cond_prices = windowed_by_date_cond[date][cond_code]
             ratios = []
             for brand, prices in cond_prices.items():
-                if len(prices) >= 2:
+                if len(prices) >= MIN_COND_PER_BRAND:
                     ratios.append(median(prices) / baseline_median[brand])
-            output_list.append({
-                "date": date,
-                "value": round(ANCHOR_VALUE * sum(ratios) / len(ratios), 4) if ratios else None,
-            })
+            value = (round(ANCHOR_VALUE * sum(ratios) / len(ratios), 4)
+                     if len(ratios) >= MIN_COND_BRANDS else None)
+            output_list.append({"date": date, "value": value})
 
     composite = fill_series(composite)
     preowned = fill_series(preowned)
@@ -558,6 +753,22 @@ def build_indices():
     prev = composite[-2] if len(composite) > 1 else latest
     chg_1d = round(latest["value"] - prev["value"], 4) if prev["value"] else 0
     chg_1d_pct = round(chg_1d / prev["value"] * 100, 2) if prev["value"] else 0
+
+    # How many days back was the last genuinely fresh (non-carried-forward)
+    # composite value — 0 means today's value is fresh.
+    days_since_fresh = 0
+    for pt in reversed(composite):
+        if not pt.get("stale", False):
+            break
+        days_since_fresh += 1
+
+    # The date/value data-sufficiency criteria first fire (anchor_date) is
+    # NOT the same as the first date a composite value actually computes —
+    # anchor_date itself usually doesn't have enough *brands* yet even
+    # though 50%+ of *baselined* brands have appeared, so it rarely equals
+    # 1.0 in practice. Surface the real first value/date explicitly rather
+    # than letting "anchored at 1.0" imply the series starts there.
+    first_computed = next((pt for pt in composite if pt["value"] is not None and not pt.get("stale")), None)
 
     now_str = datetime.now().strftime("%Y-%m-%d")
     d7 = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
@@ -636,9 +847,17 @@ def build_indices():
             f"A widening gap signals stronger demand for unworn pieces."
         )
     if retail_spread is not None:
+        concentration_note = (
+            f" Based mostly on {retail_coverage['top_brand']} "
+            f"({retail_coverage['top_brand_share_pct']:.0f}% of matched records) — "
+            f"not an even market-wide sample."
+            if retail_coverage["top_brand_share_pct"] >= 50 else ""
+        )
         insights["retail"] = (
             f"Secondary-market prices average {abs(retail_spread):.1f}% "
-            f"{'below' if retail_spread > 0 else 'above'} retail. "
+            f"{'below' if retail_spread > 0 else 'above'} retail "
+            f"(of the {retail_coverage['matched_records_pct']:.0f}% of listings with a "
+            f"known retail price).{concentration_note} "
             f"{'Discount' if retail_spread > 0 else 'Premium'} to authorised dealer pricing."
         )
     if avail_latest is not None:
@@ -655,18 +874,24 @@ def build_indices():
             "version": "2.0",
             "methodology": (
                 "Laspeyres-weighted composite of secondary-market asking prices "
-                "from 15+ Singapore Telegram watch dealer channels. "
-                "Per-brand 90-day baseline medians. 50% prestige + 50% volume weights. "
-                f"Anchored at {ANCHOR_VALUE} when 50%+ brands have data."
+                "from 15+ Singapore Telegram watch dealer channels, expressed as "
+                "a weighted average of each brand's current price relative to its "
+                "own 90-day baseline median (50% prestige + 50% volume weights). "
+                f"{ANCHOR_VALUE} represents brands trading exactly at their own "
+                "baseline on average — it is a reference scale, not a value the "
+                "series is pinned to on a specific date; see first_computed."
             ),
             "base_value": ANCHOR_VALUE,
             "anchor_date": anchor_date,
+            "first_computed": first_computed,
             "updated": datetime.now().isoformat(),
             "total_records": len(records),
             "tracked_brands": len(all_brands),
         },
         "composite": {
             "current": latest["value"],
+            "stale": latest.get("stale", False),
+            "days_since_fresh": days_since_fresh,
             "change_1d": chg_1d,
             "change_1d_pct": chg_1d_pct,
             "change_7d": round(latest["value"] - v7, 4) if v7 else None,
@@ -688,7 +913,7 @@ def build_indices():
             "new": {"current": new_latest, "series": new_idx_list[-730:]},
             "spread": cond_spread,
         },
-        "retail_spread": {"current": retail_spread, "series": spread_series[-730:]},
+        "retail_spread": {"current": retail_spread, "series": spread_series[-730:], "coverage": retail_coverage},
         "availability": {"current": avail_latest, "series": availability[-730:]},
         "brand_subindices": {
             brand: {"current": bidx[-1]["value"] if bidx else None, "series": bidx[-730:] if bidx else []}
@@ -701,6 +926,8 @@ def build_indices():
             for b, c, n in brand_contribs[:8]
         ],
         "insights": insights,
+        "price_outliers": price_outliers[-200:],
+        "price_outlier_count": len(price_outliers),
     }
 
     OUT.parent.mkdir(parents=True, exist_ok=True)

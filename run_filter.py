@@ -1,9 +1,15 @@
-import sqlite3, json, sys, os
-sys.path.insert(0, '/home/workspace/projects/sg-luxury-watch-index/parser')
-from parser.filter import is_watch_listing, extract_price
+"""Ad hoc full-corpus diagnostic: classify every scraped message and print a
+pass-rate + rejection-reason breakdown. Not part of the pipeline itself —
+useful for spot-checking classifier behavior against the live DB."""
+import sqlite3
+from pathlib import Path
 
-DB = '/home/workspace/projects/sg-luxury-watch-index/data/listings.db'
-conn = sqlite3.connect(DB)
+from parser.filter import classify
+
+ROOT = Path(__file__).resolve().parent
+DB = ROOT / "data" / "listings.db"
+
+conn = sqlite3.connect(str(DB))
 rows = conn.execute('SELECT channel_handle, message_id, posted_at, message_text, photos_count, views FROM raw_messages WHERE message_text IS NOT NULL').fetchall()
 conn.close()
 
@@ -11,8 +17,8 @@ total = len(rows)
 passed = 0
 reasons = {}
 for ch, mid, ts, text, ph, vw in rows:
-    r, reason = is_watch_listing(text)
-    if r:
+    ok, reason = classify(text)
+    if ok:
         passed += 1
     else:
         reasons[reason] = reasons.get(reason, 0) + 1

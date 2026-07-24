@@ -35,10 +35,14 @@ python3 index/index_engine.py           # Index recalculation only
 - **Type:** Laspeyres-weighted composite
 - **Brand weights:** 50% horological prestige (0–10) + 50% listing volume (6mo rolling)
 - **Baseline:** Per-brand 180-day window median from first appearance
-- **Anchor:** 1.0 when 50%+ brands have baseline data
+- **Scale:** 1.0 represents brands trading exactly at their own baseline on
+  average — it's a reference scale, not a value pinned to a specific date.
+  See index.json's `meta.first_computed` for the actual first computed
+  value/date.
 - **Window:** 3-day rolling median per brand (smooths sparse daily data)
-- **Thresholds:** 1 listing per brand, 3+ brands for valid composite day
-- **Gap filling:** Carry-forward of last valid value
+- **Thresholds:** 3 listings per brand (needed for the median to actually
+  resist an outlier), 3+ brands for valid composite day
+- **Gap filling:** Carry-forward of last valid value, marked `stale: true`
 
 ## Data Sources
 

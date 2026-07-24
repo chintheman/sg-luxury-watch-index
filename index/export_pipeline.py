@@ -3,12 +3,16 @@
 Export + Index recalculation pipeline v2.
 - Integrated sold tracing (cross-references SOLD messages against active listings)
 - Time-based expiry (drop listings older than N days)
-- Optional link checking (verify t.me links still resolve)
+- Optional link checking (verify t.me links still resolve) — used by
+  pipeline.py on the regular schedule; scoped to listings at least
+  LINK_CHECK_MIN_AGE_DAYS old and capped at LINK_CHECK_MAX_PER_RUN per run
+  (oldest first) so it stays cheap enough to run every time rather than
+  needing a separate manual pass.
 
 Usage:
   python index/export_pipeline.py                     # Default: 14d expiry, sold trace, no link check
   python index/export_pipeline.py --max-age-days 7     # 7-day expiry
-  python index/export_pipeline.py --link-check          # Enable link verification
+  python index/export_pipeline.py --link-check          # Enable link verification (age-filtered, capped)
   python index/export_pipeline.py --no-sold-trace       # Skip sold tracing
 """
 
@@ -20,6 +24,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "parser"))
 
 from filter import is_watch_listing, extract_price as filt_extract_price, extract_condition, extract_model
+from batch import is_batch_listing_post, split_batch_items, listing_key
 from index.index_engine import extract_brand, build_indices
 
 import sqlite3
@@ -34,30 +39,20 @@ INDEX_OUT = ROOT / "data" / "index.json"
 REMOVED_IN = ROOT / "data" / "removed.json"
 
 
+# Link-checking is a real HTTP request per listing (~0.3s rate-limited) — on
+# the full listing set that's minutes of runtime and load against Telegram's
+# public web view every run. Two things keep it cheap enough to run on the
+# regular schedule instead of needing a manual --link-check invocation:
+# skip listings too new to plausibly be dead yet, and cap how many get
+# checked in a single run (oldest first, since staleness risk rises with
+# age) so coverage rotates across runs instead of one run doing everything.
+LINK_CHECK_MIN_AGE_DAYS = 2
+LINK_CHECK_MAX_PER_RUN = 300
+
+
 def export_listings(max_age_days=14, link_check=False, sold_trace=True):
     conn = sqlite3.connect(str(DB))
     conn.row_factory = sqlite3.Row
-
-    # Load removed IDs from sold tracer
-    removed_ids = set()
-    removed_reasons = {}
-    if sold_trace:
-        try:
-            from sold_tracer import trace_sold_messages
-            trace_result = trace_sold_messages(str(DB), str(LISTINGS_OUT))
-            removed_ids = set(trace_result.get("removed_ids", []))
-            removed_reasons = trace_result.get("reasons", {})
-            print(f"Sold tracer: marked {len(removed_ids)} listings for removal")
-        except ImportError as e:
-            print(f"Sold tracer unavailable: {e}")
-
-    # Load removed.json if it exists from previous runs
-    if REMOVED_IN.exists():
-        prev = json.loads(REMOVED_IN.read_text())
-        for rid in prev.get("removed_ids", []):
-            removed_ids.add(rid)
-            if rid not in removed_reasons and rid in prev.get("reasons", {}):
-                removed_reasons[rid] = prev["reasons"][rid]
 
     # Time cutoff
     now = datetime.now(SGT)
@@ -70,20 +65,60 @@ def export_listings(max_age_days=14, link_check=False, sold_trace=True):
         (db_cutoff,)
     ).fetchall()
 
-    listings = []
+    # ── Phase 1: classify + age-filter. Sold-removal is applied in Phase 2,
+    # AFTER sold-tracing, so the tracer can match against this run's own
+    # freshly-classified set instead of yesterday's on-disk listings.json —
+    # otherwise most genuine sold-matches never line up with what's actually
+    # about to be published, and a listing scraped-then-sold in the same run
+    # is never caught at all. ──
+    candidates = []
     expired_count = 0
-    sold_removed_count = 0
-    link_dead_count = 0
+
+    def _classify(text):
+        """Returns a candidate dict (minus i/c/m/l/d) or None. Shared by both
+        single-item posts and each sub-item of a split batch post so both go
+        through identical brand/price/accessory/noise checks."""
+        brand = extract_brand(text)
+        price = filt_extract_price(text, convert_to_sgd=True)
+        if not (brand or price) or not is_watch_listing(text):
+            return None
+        cond = extract_condition(text)
+        model_name, _ = extract_model(text, brand)
+        return {"t": text[:200], "p": price, "b": brand, "n": cond, "md": model_name}
 
     for r in rows:
         text = r["message_text"] or ""
-        brand = extract_brand(text)
-        price = filt_extract_price(text, convert_to_sgd=True)
-        cond = extract_condition(text)
-        listing_id = f"{r['channel_handle']}-{r['message_id']}"
         listing_date = r["posted_at"][:10] if r["posted_at"] else None
+        link = f"https://t.me/s/{r['channel_handle']}/{r['message_id']}"
 
-        if not (brand or price) or not is_watch_listing(text):
+        if is_batch_listing_post(text):
+            # One raw message, many watches — only items marked available in
+            # the post's own status marker become candidates; sold ones are
+            # simply not published (see parser/batch.py for why this exists).
+            for item in split_batch_items(text):
+                if not item["available"]:
+                    continue
+                fields = _classify(item["body"])
+                if fields is None:
+                    continue
+                if listing_date and listing_date < cutoff_date:
+                    expired_count += 1
+                    continue
+                candidates.append({
+                    "i": r["id"],
+                    "c": r["channel_handle"],
+                    "m": r["message_id"],
+                    "si": item["item_number"],
+                    "d": listing_date,
+                    "f": r["photos_count"] or 0,
+                    "v": r["views"],
+                    "l": link,
+                    **fields,
+                })
+            continue
+
+        fields = _classify(text)
+        if fields is None:
             continue
 
         # ── Time-based expiry ──
@@ -91,32 +126,63 @@ def export_listings(max_age_days=14, link_check=False, sold_trace=True):
             expired_count += 1
             continue
 
-        # ── Sold tracer removal ──
-        if listing_id in removed_ids:
-            sold_removed_count += 1
-            continue
-
-        model_name, _ = extract_model(text, brand)
-        listings.append({
+        candidates.append({
             "i": r["id"],
             "c": r["channel_handle"],
             "m": r["message_id"],
             "d": listing_date,
-            "t": text[:200],
             "f": r["photos_count"] or 0,
             "v": r["views"],
-            "p": price,
-            "b": brand,
-            "n": cond,
-            "md": model_name,
-            "l": f"https://t.me/s/{r['channel_handle']}/{r['message_id']}",
+            "l": link,
+            **fields,
         })
 
+    # ── Phase 2: sold-trace against this run's own candidates, then filter ──
+    removed_ids = set()
+    removed_reasons = {}
+    if sold_trace:
+        try:
+            from sold_tracer import trace_sold_messages
+            trace_result = trace_sold_messages(str(DB), listings=candidates)
+            removed_ids = set(trace_result.get("removed_ids", []))
+            removed_reasons = trace_result.get("reasons", {})
+            print(f"Sold tracer: marked {len(removed_ids)} listings for removal")
+        except ImportError as e:
+            print(f"Sold tracer unavailable: {e}")
+
+    # Carry over any removals from previous runs the fresh trace didn't re-derive
+    if REMOVED_IN.exists():
+        prev = json.loads(REMOVED_IN.read_text())
+        for rid in prev.get("removed_ids", []):
+            removed_ids.add(rid)
+            if rid not in removed_reasons and rid in prev.get("reasons", {}):
+                removed_reasons[rid] = prev["reasons"][rid]
+
+    listings = []
+    sold_removed_count = 0
+    for c in candidates:
+        listing_id = listing_key(c)
+        if listing_id in removed_ids:
+            sold_removed_count += 1
+            continue
+        listings.append(c)
+
     # ── Link checking ──
+    link_dead_count = 0
     if link_check:
-        print(f"Verifying {len(listings)} listing links...")
+        min_age_date = (now - timedelta(days=LINK_CHECK_MIN_AGE_DAYS)).strftime("%Y-%m-%d")
+        eligible = sorted(
+            (l for l in listings if l.get("d") and l["d"] < min_age_date),
+            key=lambda l: l["d"],
+        )[:LINK_CHECK_MAX_PER_RUN]
+        eligible_ids = {listing_key(l) for l in eligible}
+        print(f"Verifying {len(eligible)}/{len(listings)} listing links "
+              f"(skipping listings <{LINK_CHECK_MIN_AGE_DAYS}d old, capped at {LINK_CHECK_MAX_PER_RUN}/run)...")
         verified = []
         for l in listings:
+            if listing_key(l) not in eligible_ids:
+                verified.append(l)
+                continue
             try:
                 ok = check_link(l["l"])
                 if ok:

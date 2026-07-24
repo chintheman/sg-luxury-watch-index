@@ -2,6 +2,11 @@
 """Filter pipeline - determine if a Telegram message is a genuine watch listing."""
 import re
 
+try:
+    from brands import match_brand as _match_brand
+except ImportError:
+    from parser.brands import match_brand as _match_brand
+
 # --- CURRENCY CONVERSION ---
 CURRENCY_RATES = {
     "USD": 1.35,   # 1 USD ≈ 1.35 SGD
@@ -65,8 +70,10 @@ NOISE_PATTERNS = [
     r'(?i)(?:watchdistrict\.store|linktree|carousell|carousell\.app)\b',
     # Service / repair
     r'(?i)\b(service centre|warranty registration|repair service|servicing special)\b',
-    # Accessories with no watch
-    r'(?i)\b(watch winder|watch box|watch roll|watch pouch|travel case|cufflink)\b',
+    # Accessories with no watch (matches "cufflink(s)"/"cuff links" — was
+    # singular-only before and silently never matched the plural/two-word
+    # forms dealers actually use)
+    r'(?i)\b(watch winder|watch box|watch roll|watch pouch|travel case|cuff\s*links?)\b',
     # Strap/bracelet standalone — only when no brand is present
     r'(?i)^\s*(?:leather strap|rubber strap|nato strap|bracelet|buckle|clasp)\b.*\$',
     # TikTok/Instagram links only (no watch details)
@@ -82,38 +89,22 @@ NOISE_PATTERNS = [
 ]
 
 # --- ACCESSORY KEYWORDS ---
+# Deliberately excludes strap/buckle/clasp/band/deployant/end-link: those are
+# common attributes *of* real watch listings (bracelet/strap material, clasp
+# type — often even part of the model name, e.g. "Hublot Classic Fusion
+# Strap"), not accessory-exclusive terms. Gating on them caused real, priced
+# watch listings to get rejected outright. NOISE_PATTERNS already separately
+# catches genuine standalone strap/buckle/clasp-for-sale posts (message
+# *starts* with the term, ends with a price) with much better precision.
+# What's left here is accessory products that have no legitimate reason to
+# appear in a full watch listing.
 ACCESSORY_KW = re.compile(
-    r'(?i)\b(strap|leather\s*band|rubber\s*band|buckle|clasp|cuff\s*links?|cufflink|desk\s*clock|watch\s*winder|wind\s*er|travel\s*pouch|watch\s*roll|watch\s*box|deployant|end\s*link|spring\s*bar|pen(?:cil)?\s*set|crown[-\s]?(stem|tube)|bezel\s*insert|dial\s*(only|for\s*sale)|movement\s*(only|for\s*sale)|hands\s*set|crystal\s*(only|replacement))\b'
+    r'(?i)\b(cuff\s*links?|desk\s*clock|watch\s*winder|wind\s*er|travel\s*pouch|watch\s*roll|watch\s*box|spring\s*bar|pen(?:cil)?\s*set|crown[-\s]?(stem|tube)|dial\s*(only|for\s*sale)|movement\s*(only|for\s*sale)|hands\s*set|crystal\s*(only|replacement))\b'
 )
 
 def has_brand(text):
     """Quick check if message mentions any watch brand."""
-    brands_full = [
-        'Rolex', 'Omega', 'Patek Philippe', 'Tudor', 'Cartier', 'Breitling',
-        'Audemars Piguet', 'IWC', 'Panerai', 'Hublot', 'Tag Heuer', 'TAG Heuer',
-        'Seiko', 'Grand Seiko', 'Chopard', 'Blancpain', 'Breguet',
-        'Vacheron Constantin', 'Jaeger-LeCoultre', 'Franck Muller', 'A. Lange',
-        'Richard Mille', 'Bell & Ross', 'Casio', 'Oris',
-        'Zenith', 'Piaget', 'Longines', 'Tissot', 'Hamilton',
-        'G-Shock', 'Baltic', 'Nomos', 'Ulysse Nardin', 'Girard-Perregaux',
-        'Bulgari', 'Bvlgari', 'Corum', 'MB&F', 'FP Journe', 'Urwerk',
-        'H. Moser', 'Sinn', 'Swarovski', 'Gucci', 'Hermes', 'Montblanc',
-    ]
-    up = (text or '').upper()
-    for b in brands_full:
-        if b.upper() in up:
-            return True
-    # Short abbreviations — word boundary only (no substring matches)
-    short_brands = [
-        ('AP', 'Audemars Piguet'),
-        ('RM', 'Richard Mille'),
-        ('JLC', 'Jaeger-LeCoultre'),
-        ('GS', 'Grand Seiko'),
-    ]
-    for abbr, _ in short_brands:
-        if re.search(r'\b' + abbr + r'\b', up):
-            return True
-    return False
+    return _match_brand(text) is not None
 
 def has_watch_terms(text):
     """Check for watch-specific terminology."""
@@ -157,39 +148,71 @@ def has_price(text):
         return False
     return False
 
-def is_watch_listing(text):
-    """Main filter: returns True if this is likely a genuine watch listing."""
+# Watch-exclusive anatomy signals — deliberately excludes generic luxury-goods
+# boilerplate like "certified" or a bare "ref #" that accessories get posted
+# with too (confirmed in the raw data: dealers use the identical
+# Ref/Price/Case/Material/Box/Papers template for both). Matches "Case: 40mm"
+# as well as "Case Diameter/Size/Width: 40mm" — dealers use both phrasings.
+_CASE_DIAMETER_RE = re.compile(
+    r'(?i)(case\s*(?:diamet\w*|size|width)?|diamet\w*)\s*[:\s]*([12]\d|3[0-9]|4[0-5])\s*mm'
+)
+_WATCH_MECHANISM_RE = re.compile(
+    r'(?i)\b(automatic|quartz|manual[\s-]?winding|mechanical|chronograph|'
+    r'chronometer|tourbillon|perpetual\s*calendar|moon\s*phase|caliber|calibre)\b'
+)
+
+
+def _has_watch_anatomy(t, require_two_signals):
+    """Signals that a listing describes an actual watch movement/case, used to
+    rescue a listing that also matched ACCESSORY_KW. A case-diameter mention
+    counts as one signal, each distinct mechanism term as another. When an
+    accessory keyword is present, require two signals total rather than any
+    single one — a case-diameter placeholder alone (confirmed present on real
+    cufflink listings that otherwise use an identical template to watches)
+    is exactly the gap that let accessories through before."""
+    has_diameter = bool(_CASE_DIAMETER_RE.search(t))
+    mechanism_hits = set(m.group(0).lower() for m in _WATCH_MECHANISM_RE.finditer(t))
+    signal_count = (1 if has_diameter else 0) + len(mechanism_hits)
+    if not require_two_signals:
+        return signal_count >= 1
+    return signal_count >= 2
+
+
+def classify(text):
+    """Main filter. Returns (passed: bool, reason: str|None) — reason is None
+    when passed, otherwise a short code identifying which check rejected it."""
     if not text or not text.strip():
-        return False
-    
+        return False, "empty"
+
     t = text.strip()
-    
+
     # Decode emoji digits first
     t = decode_emoji_digits(t)
-    
+
     # 1. Noise patterns
     for pat in NOISE_PATTERNS:
         if re.search(pat, t):
-            return False
-    
+            return False, "noise_pattern"
+
     # 2. Strong accessory rejection — even with brand, reject clear accessories that lack watch anatomy
     if ACCESSORY_KW.search(t):
-        has_watch_anatomy = bool(
-            re.search(r'(?i)(automatic|quartz|manual.*winding|mechanical|chronograph|chronometer|tourbillon|perpetual|certified|caliber|water.resist|ref\s*\.?\s*\d)'
-                      r'|(case\s*(diamet|size|width)|diamet)\s*[:\s]*([12]\d|3[0-9]|4[0-5])\s*mm', t)
-        )
-        if not has_watch_anatomy:
-            return False
-    
+        if not _has_watch_anatomy(t, require_two_signals=True):
+            return False, "accessory_no_anatomy"
+
     # 3. Must have a brand OR watch-specific terms
     if not has_brand(t) and not has_watch_terms(t):
-        return False
-    
+        return False, "no_brand_or_terms"
+
     # 4. Must mention a real price (not monthly installment)
     if not has_price(t):
-        return False
-    
-    return True
+        return False, "no_price"
+
+    return True, None
+
+
+def is_watch_listing(text):
+    """Main filter: returns True if this is likely a genuine watch listing."""
+    return classify(text)[0]
 
 def extract_price(text, convert_to_sgd=True):
     """Extract price from listing text. Returns int or None.
