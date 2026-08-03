@@ -112,6 +112,28 @@ def test_tolerance_boundary_behaviour():
     assert st["output"] == 2
 
 
+def test_prices_must_not_chain_beyond_tolerance():
+    """1000/1090/1180/1280: each within 10% of the previous, but the group
+    would span 28%. Comparing neighbours instead of the cluster minimum let
+    genuinely different watches merge — 76 real groups were affected."""
+    out, st = dedupe([
+        rec(1, "c", "Tudor", 1000, "2026-07-01", "79030"),
+        rec(2, "c", "Tudor", 1090, "2026-07-02", "79030"),
+        rec(3, "c", "Tudor", 1180, "2026-07-03", "79030"),
+        rec(4, "c", "Tudor", 1280, "2026-07-04", "79030"),
+    ])
+    for g_price in [o["price"] for o in out]:
+        pass
+    assert st["output"] > 1, "the chain must break rather than swallow a 28% spread"
+    # every surviving group must itself be within tolerance
+    assert all(
+        (o.get("dup") is None
+         or (o["dup"]["last_price"] - o["dup"]["first_price"]) / o["dup"]["first_price"] * 100
+            <= PRICE_TOLERANCE_PCT + 1e-9)
+        for o in out
+    )
+
+
 def test_stock_code_beats_price_distance():
     """The dealer's own identifier outranks any price heuristic."""
     out, st = dedupe([

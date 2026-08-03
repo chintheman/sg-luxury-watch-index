@@ -84,7 +84,12 @@ def build_groups(records):
         bucket = sorted(bucket, key=lambda x: x.get("price") or 0)
         cluster = [bucket[0]]
         for r in bucket[1:]:
-            if _within_tolerance(cluster[-1].get("price") or 0, r.get("price") or 0):
+            # Compare against the cluster's LOWEST price, not the previous
+            # entry. Comparing neighbours lets prices chain — 1000, 1090,
+            # 1180, 1280 are each within 10% of the one before, but the
+            # cluster then spans 28% and merges watches that are not the same
+            # watch. Anchoring on the minimum bounds the whole cluster.
+            if _within_tolerance(cluster[0].get("price") or 0, r.get("price") or 0):
                 cluster.append(r)
             else:
                 groups.append(cluster)
