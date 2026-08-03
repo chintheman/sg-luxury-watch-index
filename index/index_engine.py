@@ -25,12 +25,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "parser"))
 try:
-    from filter import extract_price, extract_condition, is_watch_listing
+    from filter import extract_price, extract_condition, is_watch_listing, extract_model
     from brands import match_brand as extract_brand
     from batch import is_batch_listing_post, split_batch_items
+    from attributes import extract_attributes
+    from dedupe import dedupe
     HAS_FILTER = True
 except ImportError:
     HAS_FILTER = False
+    def extract_attributes(t): return {}
+    def dedupe(rs): return rs, {"removed": 0, "removed_pct": 0.0, "groups_with_repeats": 0}
     def extract_brand(t): return None
     def extract_price(t): return None
     def extract_condition(t): return "u"
@@ -440,15 +444,19 @@ def build_indices():
         if not brand or not price or not (500 <= price <= 500000):
             return None
         retail, retail_method = get_retail_price_smart(brand, text)
+        attrs = extract_attributes(text)
         return {
             "brand": brand, "price": price, "cond": extract_condition(text),
             "date": date, "retail": retail, "retail_method": retail_method,
+            "ref": extract_model(text, brand)[1] if HAS_FILTER else None,
+            "stock_code": attrs.get("stock_code"),
         }
 
     for ch, mid, ts, text in rows:
         if not text:
             continue
         date = ts[:10]
+        _channel = ch
         if date < "2025-01-01":
             continue
 
@@ -458,16 +466,28 @@ def build_indices():
                     continue
                 rec = _record_from(item["body"], date)
                 if rec:
+                    rec["channel"] = _channel
                     records.append(rec)
             continue
 
         rec = _record_from(text, date)
         if rec:
+            rec["channel"] = _channel
             records.append(rec)
 
     if not records:
         print("ERROR: No priced records found.")
         return
+
+    # Collapse reposts BEFORE any weighting. Brand weights are volume-driven,
+    # so counting one watch five times would inflate that brand's weight and
+    # bake the error into every baseline.
+    for i, r in enumerate(records):
+        r["id"] = i
+        r["channel"] = r.get("channel") or "unknown"
+    records, dstats = dedupe(records)
+    print(f"Dedupe: {dstats['removed']} repost(s) collapsed ({dstats['removed_pct']}%), "
+          f"{len(records)} unique watches remain")
 
     records.sort(key=lambda r: r["date"])
     all_dates = sorted(set(r["date"] for r in records))

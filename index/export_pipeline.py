@@ -25,6 +25,7 @@ sys.path.insert(0, str(ROOT / "parser"))
 
 from filter import is_watch_listing, extract_price as filt_extract_price, extract_condition, extract_model
 from attributes import extract_attributes
+from dedupe import dedupe
 from batch import is_batch_listing_post, split_batch_items, listing_key
 from index.index_engine import extract_brand, build_indices
 
@@ -141,6 +142,29 @@ def export_listings(max_age_days=14, link_check=False, sold_trace=True):
             "l": link,
             **fields,
         })
+
+    # ── Phase 1b: collapse reposts of the same physical watch ──
+    # 35% of listings are the same watch posted again. Dedupe before anything
+    # downstream counts them, and keep the newest sighting so the published
+    # price is the current asking price.
+    for cd in candidates:
+        cd["_ddid"] = listing_key(cd)
+    deduped, dstats = dedupe([
+        {"id": cd["_ddid"], "channel": cd.get("c"), "brand": cd.get("b"),
+         "price": cd.get("p"), "date": cd.get("d"), "ref": cd.get("md"),
+         "stock_code": cd.get("stock_code"), "_orig": cd}
+        for cd in candidates
+    ])
+    keep_ids = {d["id"] for d in deduped}
+    dup_by_id = {d["id"]: d.get("dup") for d in deduped if d.get("dup")}
+    candidates = [cd for cd in candidates if cd["_ddid"] in keep_ids]
+    for cd in candidates:
+        if cd["_ddid"] in dup_by_id:
+            cd["dup"] = dup_by_id[cd["_ddid"]]
+        cd.pop("_ddid", None)
+    print(f"Dedupe: {dstats['removed']} repost(s) collapsed "
+          f"({dstats['removed_pct']}%), {dstats['groups_with_repeats']} watch(es) "
+          f"listed more than once")
 
     # ── Phase 2: sold-trace against this run's own candidates, then filter ──
     removed_ids = set()
