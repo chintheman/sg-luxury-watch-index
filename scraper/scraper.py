@@ -45,6 +45,19 @@ CHANNELS = [
 DELAY = 1.0
 MAX_PAGES = 100
 
+# Incremental runs used to fetch exactly ONE page and keep only messages
+# newer than latest_id. Any channel posting more than a page-worth between
+# runs silently lost everything in between, permanently — which is why
+# message-id coverage sits at 42% for a busy channel like watchexchangesg
+# but 95% for a quiet one like ChuanwatchSG. Now we page backwards until we
+# reach known territory, bounded so a long outage can't run away.
+INCREMENTAL_MAX_PAGES = 25
+
+# Always re-read the newest few pages even when nothing is new, so edits to
+# recent posts (a price cut, or a listing edited to say SOLD) are noticed.
+# Older posts are rarely edited, so this stays cheap.
+EDIT_RECHECK_PAGES = 3
+
 # --- Database ------------------------------------------------------------
 
 SCHEMA = """
@@ -57,8 +70,13 @@ CREATE TABLE IF NOT EXISTS raw_messages (
     photos_count INTEGER DEFAULT 0,
     views INTEGER,
     scraped_at TEXT NOT NULL DEFAULT (datetime('now')),
+    reply_to_message_id INTEGER,
+    first_seen_at TEXT,
+    text_updated_at TEXT,
+    edit_count INTEGER NOT NULL DEFAULT 0,
     UNIQUE(channel_handle, message_id)
 );
+CREATE INDEX IF NOT EXISTS idx_raw_reply_to ON raw_messages(channel_handle, reply_to_message_id);
 CREATE INDEX IF NOT EXISTS idx_raw_channel ON raw_messages(channel_handle);
 CREATE INDEX IF NOT EXISTS idx_raw_posted ON raw_messages(posted_at);
 """
@@ -125,9 +143,29 @@ def parse_page(html, channel_handle):
         time_el = msg_div.select_one("time")
         posted_at = time_el.get("datetime") if time_el else None
 
-        # Text
-        text_div = msg_div.select_one(".tgme_widget_message_text")
-        text = text_div.get_text("\n", strip=True) if text_div else None
+        # Reply link. Telegram renders the quoted parent as
+        #   <a class="tgme_widget_message_reply" href="https://t.me/<ch>/<id>">
+        # This is the only reliable tie between a bare "SOLD!" post and the
+        # listing it refers to — 87% of SOLD messages carry one.
+        reply_a = msg_div.select_one("a.tgme_widget_message_reply")
+        reply_to = None
+        if reply_a and reply_a.get("href"):
+            m = re.search(r"/(\d+)\s*$", reply_a["href"].rstrip("/"))
+            if m:
+                reply_to = int(m.group(1))
+
+        # Text. The quoted-parent preview inside that reply anchor ALSO carries
+        # the .tgme_widget_message_text class and appears first in document
+        # order, so the previous select_one() stored the PARENT's text as if it
+        # were this message's — silently, for every reply ever scraped. Skip
+        # the preview (it is marked js-message_reply_text) and take the
+        # message's own text.
+        text = None
+        for t in msg_div.select(".tgme_widget_message_text"):
+            if "js-message_reply_text" in (t.get("class") or []):
+                continue
+            text = t.get_text("\n", strip=True)
+            break
 
         # Views
         views_el = msg_div.select_one(".tgme_widget_message_views")
@@ -149,6 +187,7 @@ def parse_page(html, channel_handle):
             "message_text": text,
             "photos_count": photos,
             "views": views,
+            "reply_to_message_id": reply_to,
         })
 
     return results
@@ -167,24 +206,78 @@ def get_next_before(html):
 # --- Storage -------------------------------------------------------------
 
 def save_messages(conn, messages):
-    saved = 0
+    """Insert new messages; update ones we have already seen.
+
+    Previously INSERT OR IGNORE: a message was captured once and never looked
+    at again, so a dealer editing a post to say SOLD, or cutting the price,
+    was invisible forever. Now an existing row is updated in place, and a
+    change to its text bumps edit_count and stamps text_updated_at, turning
+    edits into a usable signal.
+
+    Note for whoever reads edit_count next: the first scrape after migration
+    001 also CORRECTS text on reply messages (they previously stored the
+    quoted parent's text by mistake). Those corrections look exactly like
+    genuine edits at the row level, so treat edits stamped around the
+    migration date as suspect rather than as real dealer activity.
+
+    Returns (inserted, updated).
+    """
+    inserted = updated = 0
+    now = datetime.now(SGT).isoformat()
     cur = conn.cursor()
+
     for m in messages:
         try:
+            row = cur.execute(
+                "SELECT message_text, views, photos_count, reply_to_message_id "
+                "FROM raw_messages WHERE channel_handle=? AND message_id=?",
+                (m["channel_handle"], m["message_id"]),
+            ).fetchone()
+
+            if row is None:
+                cur.execute(
+                    """INSERT INTO raw_messages
+                       (channel_handle, message_id, posted_at, message_text,
+                        photos_count, views, reply_to_message_id, first_seen_at)
+                       VALUES (?,?,?,?,?,?,?,?)""",
+                    (m["channel_handle"], m["message_id"], m["posted_at"],
+                     m["message_text"], m["photos_count"], m["views"],
+                     m.get("reply_to_message_id"), now),
+                )
+                inserted += 1
+                continue
+
+            old_text, old_views, old_photos, old_reply = row
+            new_reply = m.get("reply_to_message_id")
+            text_changed = old_text != m["message_text"]
+            # A re-read that lost the reply markup must never erase a link we
+            # already captured, so only ever fill this in, never clear it.
+            reply_gained = new_reply is not None and old_reply is None
+
+            if not (text_changed or reply_gained
+                    or old_views != m["views"] or old_photos != m["photos_count"]):
+                continue
+
             cur.execute(
-                """INSERT OR IGNORE INTO raw_messages
-                   (channel_handle, message_id, posted_at, message_text,
-                    photos_count, views)
-                   VALUES (?,?,?,?,?,?)""",
-                (m["channel_handle"], m["message_id"], m["posted_at"],
-                 m["message_text"], m["photos_count"], m["views"]),
+                """UPDATE raw_messages
+                      SET message_text        = ?,
+                          photos_count        = ?,
+                          views               = ?,
+                          reply_to_message_id = COALESCE(?, reply_to_message_id),
+                          text_updated_at     = CASE WHEN ? THEN ? ELSE text_updated_at END,
+                          edit_count          = edit_count + CASE WHEN ? THEN 1 ELSE 0 END
+                    WHERE channel_handle = ? AND message_id = ?""",
+                (m["message_text"], m["photos_count"], m["views"], new_reply,
+                 1 if text_changed else 0, now,
+                 1 if text_changed else 0,
+                 m["channel_handle"], m["message_id"]),
             )
-            if cur.rowcount > 0:
-                saved += 1
+            updated += 1
         except Exception as e:
-            print(f"  ✗ DB error: {e}")
+            print(f"  \u2717 DB error: {e}")
+
     conn.commit()
-    return saved
+    return inserted, updated
 
 
 # --- Main Scrape Loop ----------------------------------------------------
@@ -194,23 +287,63 @@ def scrape_channel(conn, ch, full=False, log_state=None):
     ch_state = (log_state or {}).get("channels", {}).get(handle, {})
 
     if not full and ch_state.get("latest_id"):
-        # Incremental: start from latest known, go forward
+        # Incremental. This used to fetch exactly one page and keep only
+        # messages newer than latest_id, so anything a channel posted beyond
+        # a single page between runs was lost permanently. Page backwards
+        # until we reach known territory instead, and always re-read the
+        # newest EDIT_RECHECK_PAGES so edits to recent posts are caught.
         latest_known = ch_state["latest_id"]
-        # Get newest page to find messages > latest_known
-        html = fetch_page(handle)
-        if not html:
-            return 0
-        messages = parse_page(html, handle)
-        new_msgs = [m for m in messages if m["message_id"] > latest_known]
-        saved = save_messages(conn, new_msgs)
-        if saved:
-            newest = max(m["message_id"] for m in new_msgs)
+        total_new = total_upd = 0
+        pages = 0
+        before = None
+        newest_seen = latest_known
+
+        while pages < INCREMENTAL_MAX_PAGES:
+            html = fetch_page(handle, before)
+            if not html:
+                break
+            messages = parse_page(html, handle)
+            if not messages:
+                break
+
+            page_min = min(m["message_id"] for m in messages)
+            page_max = max(m["message_id"] for m in messages)
+            newest_seen = max(newest_seen, page_max)
+
+            # On the first few pages save everything, so already-known rows
+            # get re-read and edits surface. Deeper pages only carry genuinely
+            # new messages, since we are just closing a gap there.
+            to_save = messages if pages < EDIT_RECHECK_PAGES else [
+                m for m in messages if m["message_id"] > latest_known
+            ]
+            ins, upd = save_messages(conn, to_save)
+            total_new += ins
+            total_upd += upd
+            pages += 1
+
+            # Reached messages we already had: the gap is closed.
+            if page_min <= latest_known:
+                break
+
+            before = get_next_before(html)
+            if not before:
+                break
+            time.sleep(DELAY)
+
+        if pages >= INCREMENTAL_MAX_PAGES:
+            print(f"  \u26a0 {handle}: hit INCREMENTAL_MAX_PAGES ({INCREMENTAL_MAX_PAGES}) "
+                  f"without reaching known messages — a gap may remain, run --full")
+
+        if total_new or total_upd:
             log_state["channels"][handle] = {
-                "latest_id": newest,
+                **ch_state,
+                "latest_id": newest_seen,
                 "last_scrape": datetime.now(SGT).isoformat(),
-                "total_scraped": ch_state.get("total_scraped", 0) + saved,
+                "total_scraped": ch_state.get("total_scraped", 0) + total_new,
             }
-        return saved
+        if total_upd:
+            print(f"  \u21bb {total_upd} existing message(s) updated (edits/views)")
+        return total_new
 
     # Full / first run: paginate backwards
     html = fetch_page(handle)
@@ -228,8 +361,9 @@ def scrape_channel(conn, ch, full=False, log_state=None):
         for m in new_msgs:
             seen.add(m["message_id"])
 
-        saved = save_messages(conn, new_msgs)
-        total_saved += saved
+        ins, upd = save_messages(conn, new_msgs)
+        saved = ins
+        total_saved += ins
 
         if not new_msgs:
             break
