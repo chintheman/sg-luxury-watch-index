@@ -12,6 +12,7 @@ Canonical names must stay exactly as-is: they're also the keys used by
 PRESTIGE / RETAIL_PRICES / BRAND_MODEL_MAP in index_engine.py and filter.py.
 """
 import re
+import unicodedata
 
 # canonical name -> alternate spellings/formatting seen in dealer posts.
 # Matching is done on a normalized form (lowercased, periods stripped,
@@ -73,22 +74,48 @@ BRAND_ALIASES = {
     "Glashutte Original": ["Glashütte Original", "Glashutte", "Glashütte"],
     "Chanel": [],
     "Louis Erard": [],
+    # Second batch, same cause: real brands present in the dealer data that no
+    # brand list knew about, so their listings passed classification and then
+    # vanished from the index with brand: null.
+    "Frederique Constant": [],
+    "Jacob & Co": ["Jacob and Co", "Jacob & Co."],
+    "Baume & Mercier": ["Baume et Mercier", "Baume and Mercier"],
+    "Carl F. Bucherer": ["Carl F Bucherer", "Carl Bucherer"],
+    "Graham": [],
+    "Czapek": [],
+    "Bovet": [],
+    "Chronoswiss": [],
+    "Jaquet Droz": [],
+    "Konstantin Chaykin": [],
+    "Bedat": ["Bedat & Co"],
+    "Fears": [],
+    "Arnold & Son": ["Arnold and Son"],
 }
 
 # Short abbreviations need word-boundary matching, not substring — "RM" or
 # "AP" as loose substrings would false-positive constantly.
 ABBREVIATIONS = {
     "AP": "Audemars Piguet",
-    "RM": "Richard Mille",
     "JLC": "Jaeger-LeCoultre",
     "GS": "Grand Seiko",
 }
+
+# "RM" is both a Richard Mille model prefix and the Malaysian Ringgit symbol,
+# and treating it as a plain abbreviation mis-attributed ringgit prices
+# ("RM53,800", "RM14x,800") to Richard Mille. A real model reference is 2-3
+# digits, optionally hyphen-suffixed (RM 011, RM 030-01, RM 67-01); a ringgit
+# amount runs to 4+ digits or carries a thousands comma. Require the model
+# shape and reject the money shape.
+RM_MODEL_RE = re.compile(r"\bRM\s?\d{2,3}(?:-\d{2})?\b(?![\d,])")
 
 CANONICAL_BRANDS = list(BRAND_ALIASES.keys())
 
 
 def _normalize(text):
-    t = (text or "").lower()
+    # NFKC first: dealers style brand names with Unicode maths-bold and other
+    # presentation forms (𝐑𝐨𝐥𝐞𝐱), which .lower() does not fold, so the brand
+    # simply never matched and the listing was published with brand: null.
+    t = unicodedata.normalize("NFKC", text or "").lower()
     t = t.replace(".", "")
     t = re.sub(r"[-\s]+", " ", t)
     return t.strip()
@@ -135,12 +162,16 @@ def match_brand(text):
 
     # Abbreviations only as a fallback when no full brand name matched —
     # weaker signal, but still prefer whichever appears earliest.
-    upper = text.upper()
+    upper = unicodedata.normalize("NFKC", text).upper()
     best_abbr_pos, best_abbr_canonical = None, None
     for abbr, canonical in ABBREVIATIONS.items():
         m = re.search(r'\b' + abbr + r'\b', upper)
         if m and (best_abbr_pos is None or m.start() < best_abbr_pos):
             best_abbr_pos, best_abbr_canonical = m.start(), canonical
+
+    m = RM_MODEL_RE.search(upper)
+    if m and (best_abbr_pos is None or m.start() < best_abbr_pos):
+        best_abbr_pos, best_abbr_canonical = m.start(), "Richard Mille"
     return best_abbr_canonical
 
 
