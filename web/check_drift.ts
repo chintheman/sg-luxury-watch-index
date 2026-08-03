@@ -64,24 +64,58 @@ const CASES: Array<[string, Record<string, string>]> = [
   ["photos only", { hasPhotos: "true", limit: "25" }],
 ];
 
+// One comparison pass. Returns differing paths, or null if the run itself
+// failed (which is not the same thing as drift and must not be reported as it).
+async function compare(query: Record<string, string>): Promise<string[] | null> {
+  let local: any;
+  try {
+    local = (await handler(fakeContext(query))).body;
+  } catch (e: any) {
+    console.error(`    local handler threw: ${e?.message ?? e}`);
+    return null;
+  }
+
+  const qs = new URLSearchParams(query).toString();
+  let live: any;
+  try {
+    const res = await fetch(qs ? `${LIVE_URL}?${qs}` : LIVE_URL, {
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) {
+      console.error(`    live endpoint returned HTTP ${res.status}`);
+      return null;
+    }
+    live = await res.json();
+  } catch (e: any) {
+    console.error(`    could not reach live endpoint: ${e?.message ?? e}`);
+    return null;
+  }
+
+  return diff(local, live);
+}
+
 let failed = false;
 
 for (const [name, query] of CASES) {
-  const local = (await handler(fakeContext(query))).body;
+  let d = await compare(query);
 
-  const qs = new URLSearchParams(query).toString();
-  const res = await fetch(qs ? `${LIVE_URL}?${qs}` : LIVE_URL, {
-    headers: { Accept: "application/json" },
-  });
-  if (!res.ok) {
-    console.error(`✗ ${name}: live endpoint returned HTTP ${res.status}`);
-    failed = true;
-    continue;
+  // The local read and the live fetch happen at different instants against
+  // the same files. A pipeline run writing listings.json in between produces
+  // a real-looking diff that is not drift. Confirm once before believing it.
+  if (d !== null && d.length > 0) {
+    await new Promise(r => setTimeout(r, 2000));
+    const again = await compare(query);
+    if (again === null) { d = null; }
+    else if (again.length === 0) {
+      console.log(`✓ ${name}: matched on retry (first pass raced a data write)`);
+      continue;
+    } else { d = again; }
   }
-  const live = await res.json();
 
-  const d = diff(local, live);
-  if (d.length === 0) {
+  if (d === null) {
+    failed = true;
+    console.error(`✗ ${name}: check could not complete (see above) — not treated as a match`);
+  } else if (d.length === 0) {
     console.log(`✓ ${name}: deployed route matches repo`);
   } else {
     failed = true;
