@@ -39,6 +39,12 @@ MAX_CHAIN_HOPS = 6
 # reply rather than a genuinely year-old sale.
 MAX_SELL_DAYS = 365
 
+# A brand median needs enough sales behind it to mean anything. At n=3 the
+# published figures were "Panerai sells in 68 days" and "Tudor in 25" — those
+# are three watches, not a market. Below this the brand is withheld rather
+# than shown with a caveat nobody reads.
+MIN_BRAND_SALES = 8
+
 
 def _days(a, b):
     try:
@@ -117,9 +123,12 @@ def build_signals():
     grouped = defaultdict(list)
     for s in sold:
         grouped[s["brand"]].append(s["days_to_sell"])
+    withheld = {}
     for b, v in grouped.items():
-        if len(v) >= 3:
+        if len(v) >= MIN_BRAND_SALES:
             by_brand_speed[b] = _dist(v)
+        else:
+            withheld[b] = len(v)
 
     # ── Price movement while listed, from repost groups ──
     recs = list(listings.values())
@@ -172,14 +181,29 @@ def build_signals():
             "Time to sell is measured from dealer-authored SOLD replies, which "
             "only some channels post. It is a sample of confirmed sales, not a "
             "sell-through rate: listings that never sell are invisible here, so "
-            "these figures skew fast. Price movement is measured on watches "
+            "these figures skew fast and describe only the dealers who post "
+            "sold notices at all. Price movement is measured on watches "
             "reposted by the same dealer. Attention is indexed to each "
             "channel's own median, because raw view counts mostly measure "
             "channel size rather than interest in the watch."
         ),
         "time_to_sell": {
             "overall": _dist([s["days_to_sell"] for s in sold]),
+            # How much of the market this actually describes. A confirmed sale
+            # requires the dealer to post a SOLD reply, and most do not, so
+            # this is a small and self-selected slice — state it in the data
+            # rather than only in prose.
+            "coverage": {
+                "watches_with_confirmed_sale": len(sold),
+                "unique_watches_total": None,        # filled in below
+                "pct_of_watches": None,
+                "channels_posting_sold_replies": sorted(
+                    {s["channel"] for s in sold}
+                ),
+            },
             "by_brand": by_brand_speed,
+            "by_brand_withheld_too_few_sales": withheld,
+            "min_sales_to_publish_a_brand": MIN_BRAND_SALES,
             "fastest": sorted(sold, key=lambda s: s["days_to_sell"])[:5] and [
                 {"brand": s["brand"], "model": s["model"], "price": s["price"],
                  "days": s["days_to_sell"]}
@@ -207,6 +231,12 @@ def build_signals():
                                                        key=lambda kv: -kv[1])[:10]),
         },
     }
+    cov = out["time_to_sell"]["coverage"]
+    cov["unique_watches_total"] = out["inventory"]["unique_watches"]
+    cov["pct_of_watches"] = round(
+        100 * len(sold) / out["inventory"]["unique_watches"], 1
+    ) if out["inventory"]["unique_watches"] else 0.0
+
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(out, indent=2, default=str))
 

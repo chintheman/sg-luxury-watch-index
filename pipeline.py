@@ -171,7 +171,10 @@ def main():
     # Step 3: Derived market signals (time to sell, price movement, inventory)
     run_step("Signals", "python3 index/signals.py")
 
-    # Step 4: Surface data-quality anomalies for review
+    # Step 4: Export everything we track to CSVs for exploration
+    run_step("Export sheets", "python3 index/export_sheets.py")
+
+    # Step 5: Surface data-quality anomalies for review
     check_anomalies()
 
     print("\n✅ Pipeline complete.")
