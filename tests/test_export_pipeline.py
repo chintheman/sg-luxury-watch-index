@@ -15,6 +15,18 @@ SGT = timezone(timedelta(hours=8))
 LISTING_TEXT = "Rolex Submariner 126610LN Price: SGD $16,800 BNIB full set"
 
 
+def _listing(n):
+    """A DISTINCT watch per row.
+
+    These tests are about link-check scoping, not deduplication, but the two
+    interact. Repeating one listing text from a single dealer is now correctly
+    collapsed into one watch, which would silently shrink these fixtures out
+    from under their assertions. Vary the reference so each row is genuinely a
+    different watch.
+    """
+    return f"Rolex Submariner 1266{n:02d}LN Price: SGD ${16000 + n * 137:,} BNIB full set"
+
+
 def _make_db(tmp_path, rows):
     """rows: list of (channel_handle, message_id, posted_at, message_text)"""
     db_path = tmp_path / "listings.db"
@@ -64,8 +76,8 @@ def _run(tmp_path, rows, monkeypatch, checked_urls, dead_urls=frozenset()):
 
 def test_listings_newer_than_min_age_are_never_checked(tmp_path, monkeypatch):
     rows = [
-        ("dealerx", 1, _iso(0), LISTING_TEXT),   # today — too new
-        ("dealerx", 2, _iso(1), LISTING_TEXT),   # 1 day — too new
+        ("dealerx", 1, _iso(0), _listing(1)),   # today — too new
+        ("dealerx", 2, _iso(1), _listing(2)),   # 1 day — too new
     ]
     checked = []
     listings = _run(tmp_path, rows, monkeypatch, checked)
@@ -97,9 +109,9 @@ def test_dead_link_is_dropped(tmp_path, monkeypatch):
 def test_per_run_cap_prioritizes_oldest_eligible_first(tmp_path, monkeypatch):
     monkeypatch.setattr(ep, "LINK_CHECK_MAX_PER_RUN", 2)
     rows = [
-        ("dealerx", 1, _iso(10), LISTING_TEXT),  # oldest — must be checked
-        ("dealerx", 2, _iso(8), LISTING_TEXT),   # 2nd oldest — must be checked
-        ("dealerx", 3, _iso(5), LISTING_TEXT),   # newer eligible — should be skipped this run
+        ("dealerx", 1, _iso(10), _listing(1)),  # oldest — must be checked
+        ("dealerx", 2, _iso(8), _listing(2)),   # 2nd oldest — must be checked
+        ("dealerx", 3, _iso(5), _listing(3)),   # newer eligible — should be skipped this run
     ]
     checked = []
     listings = _run(tmp_path, rows, monkeypatch, checked)

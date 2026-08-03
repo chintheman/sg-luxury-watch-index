@@ -85,8 +85,13 @@ def export_listings(max_age_days=14, link_check=False, sold_trace=True):
         if not (brand or price) or not is_watch_listing(text):
             return None
         cond = extract_condition(text)
-        model_name, _ = extract_model(text, brand)
-        rec = {"t": text[:200], "p": price, "b": brand, "n": cond, "md": model_name}
+        model_name, ref = extract_model(text, brand)
+        # `md` is a model NAME ("Submariner"); `ref` is the reference number
+        # ("126610LN"). Only the reference is specific enough to identify a
+        # watch — deduping on the model name would merge every Submariner one
+        # dealer holds within the price tolerance.
+        rec = {"t": text[:200], "p": price, "b": brand, "n": cond,
+               "md": model_name, "ref": ref}
         # Structured attributes: stored now, displayed later. Only non-null
         # values are carried so listings.json does not bloat with nulls.
         rec.update({k: v for k, v in extract_attributes(text).items() if v is not None})
@@ -151,7 +156,7 @@ def export_listings(max_age_days=14, link_check=False, sold_trace=True):
         cd["_ddid"] = listing_key(cd)
     deduped, dstats = dedupe([
         {"id": cd["_ddid"], "channel": cd.get("c"), "brand": cd.get("b"),
-         "price": cd.get("p"), "date": cd.get("d"), "ref": cd.get("md"),
+         "price": cd.get("p"), "date": cd.get("d"), "ref": cd.get("ref"),
          "stock_code": cd.get("stock_code"), "_orig": cd}
         for cd in candidates
     ])
