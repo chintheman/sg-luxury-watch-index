@@ -222,11 +222,19 @@ def save_messages(conn, messages):
 
     Returns (inserted, updated).
     """
-    inserted = updated = 0
+    inserted = updated = skipped = 0
     now = datetime.now(SGT).isoformat()
     cur = conn.cursor()
 
     for m in messages:
+        # Telegram serves a handful of posts with no <time> element. posted_at
+        # is NOT NULL and every consumer date-filters on it, so these can never
+        # be used. INSERT OR IGNORE used to swallow them silently; skip them
+        # deliberately and report a count instead of emitting one exception per
+        # message into the cron's Telegram report.
+        if not m.get("posted_at"):
+            skipped += 1
+            continue
         try:
             row = cur.execute(
                 "SELECT message_text, views, photos_count, reply_to_message_id "
@@ -277,6 +285,8 @@ def save_messages(conn, messages):
             print(f"  \u2717 DB error: {e}")
 
     conn.commit()
+    if skipped:
+        print(f"  \u2139 skipped {skipped} message(s) with no timestamp (unusable: every consumer date-filters)")
     return inserted, updated
 
 
