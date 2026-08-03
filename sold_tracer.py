@@ -1,204 +1,185 @@
 #!/usr/bin/env python3
 """
-Sold Tracer — cross-references SOLD messages against active listings.
+Sold tracer — decide which published listings have already sold.
 
-Strategies (in priority order):
-  1. Item number match (GML#### → same item number in active listing)
-  2. Brand + model match (same channel, same brand/model, SOLD posted AFTER listing)
+The previous implementation matched SOLD messages to listings by brand, model
+and price. It found nothing, ever: 6,782 SOLD messages produced 0 removals.
+That was structural rather than a tuning problem. Sold posts are bare
+"SOLD!" replies — 0% carry a brand, 0% carry a price — so there is nothing in
+their text to match on. All the heuristics have been removed.
 
-(Batch "[WATCH DEALS ...]" roundup posts are handled separately — see
-parser/batch.py — since each item's own status marker is a more reliable
-sold signal than cross-referencing a later SOLD message.)
+Two signals replace them, both from the ingestion work in migration 001:
 
-Output: data/removed.json — {removed_ids: [...], reasons: {id: reason}}
+  1. REPLY LINK (primary). Telegram exposes the parent of a reply in its
+     public HTML, and the scraper now stores it. A SOLD message replying to a
+     listing is an explicit, dealer-authored statement that that listing sold.
+     Chains are followed, because dealers frequently reply "SOLD!" to their
+     own previous "SOLD!" — 2,597 of 2,713 reply links point at another sold
+     notice rather than at a listing.
+
+  2. EDIT (secondary). Dealers also mark a sale by editing the listing itself.
+     The scraper now re-reads recent messages and records when a text changed,
+     so a listing that gains the word SOLD after first being seen is treated
+     as sold.
+
+     Caveat, deliberately enforced in code: the first scrape after migration
+     001 also CORRECTED text on every reply message (they previously stored
+     the quoted parent's text). Those corrections are indistinguishable from
+     genuine edits at the row level, so edits stamped during the migration
+     window are ignored outright rather than being trusted as dealer activity.
+
+Output: data/removed.json — removed_ids, reasons, and time-to-sell samples.
 """
 
-import sqlite3, json, re, sys
+import json
+import re
+import sqlite3
+import sys
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from collections import defaultdict
-from parser.filter import extract_price, extract_condition
-from parser.filter import extract_model as filt_extract_model
-from parser.brands import match_brand as extract_brand_local
+
 from parser.batch import listing_key
 
 SGT = timezone(timedelta(hours=8))
 ROOT = Path(__file__).resolve().parent
 DB = ROOT / "data" / "listings.db"
 REMOVED_OUT = ROOT / "data" / "removed.json"
-LOOKBACK_DAYS = 90
+
+SOLD_RE = re.compile(r"\bSOLD\b", re.I)
+
+# How far to follow a chain of "SOLD!" replying to "SOLD!" before giving up.
+MAX_CHAIN_HOPS = 6
+
+# Edits recorded inside this window are migration artefacts, not dealer
+# activity — see the module docstring. Anything from migration 001's backfill.
+MIGRATION_EDIT_WINDOW = ("2026-08-03T00:00", "2026-08-03T23:59")
 
 
-# ── Item number extraction ────────────────────────────────────────────────
-ITEM_RE = re.compile(r'GML\d+', re.I)
-ITEM_RE_GENERIC = re.compile(r'(?:item|ref|listing)\s*(?:no|#|number|:)?\s*[:\-]?\s*([A-Z0-9]{3,20})', re.I)
+def _is_migration_artifact(stamp):
+    if not stamp:
+        return False
+    lo, hi = MIGRATION_EDIT_WINDOW
+    return lo <= stamp[:16] <= hi
 
 
-def extract_item_number(text):
-    """Extract item/reference number like GML3589."""
-    m = ITEM_RE.search(text)
-    if m:
-        return m.group(0).upper()
-    m = ITEM_RE_GENERIC.search(text)
-    if m:
-        return m.group(1).upper()
-    return None
+def _days_between(a, b):
+    try:
+        da = datetime.fromisoformat((a or "").replace("Z", "+00:00"))
+        db = datetime.fromisoformat((b or "").replace("Z", "+00:00"))
+        return (db - da).days
+    except (ValueError, TypeError):
+        return None
 
-
-# ── Main ──────────────────────────────────────────────────────────────────
 
 def trace_sold_messages(db_path=None, listings=None, listings_path=None):
-    """Cross-reference SOLD messages against the currently active listing set.
+    """Return {removed_ids, reasons, strategies, time_to_sell, ...}.
 
-    `listings` should be the in-memory list of listings about to be exported
-    THIS run (same shape as listings.json entries) — matching against that,
-    rather than the on-disk listings.json from the previous run, is what lets
-    a listing that's scraped and marked sold within the same run get caught.
-    Falls back to reading listings_path from disk (previous run's snapshot)
-    when `listings` isn't supplied, e.g. for standalone/CLI use.
+    `listings` is this run's in-memory candidate set, so a listing scraped and
+    marked sold in the same run is still caught.
     """
     db_path = Path(db_path or DB)
-
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
 
-    # Active listings: prefer the freshly-computed in-memory set for this run
-    if listings is not None:
-        active = listings
-    else:
+    if listings is None:
         listings_path = Path(listings_path or ROOT / "data" / "listings.json")
-        active = json.loads(listings_path.read_text()) if listings_path.exists() else []
+        listings = json.loads(listings_path.read_text()) if listings_path.exists() else []
 
-    # IDs of listings actually about to be published — only messages in this
-    # set can ever be worth "removing", so the match pool below is scoped to
-    # it directly rather than every non-SOLD message in the lookback window.
-    # (Previously the match pool was every raw message from the last 90 days,
-    # which meant most matches were against listings that had already aged
-    # out of the 14-day display window regardless — wasted work, and a
-    # source of stale/coincidental brand+price false-positive matches.)
-    #
-    # Split-batch sub-items (listing_key() returns "c-m-si" for those) never
-    # match a raw message's plain "c-m" id below, so they're intentionally
-    # excluded from this cross-message matching pool — their own SOLD status
-    # already comes straight from the post itself (see parser/batch.py) and
-    # is refreshed every time the dealer reposts, so cross-referencing them
-    # against separate SOLD messages here would be redundant.
-    current_ids = {listing_key(l) for l in active}
+    # Only listings about to be published can be worth removing.
+    current = {}
+    for l in listings:
+        current[(l.get("c"), l.get("m"))] = listing_key(l)
 
-    # Get all messages (last LOOKBACK_DAYS) — SOLD messages themselves are
-    # still searched across the full window, since a sold post can lag the
-    # original listing by weeks.
-    cutoff = (datetime.now(SGT) - timedelta(days=LOOKBACK_DAYS)).isoformat()
-    all_msgs = conn.execute(
-        "SELECT id, channel_handle, message_id, posted_at, message_text "
-        "FROM raw_messages WHERE posted_at >= ? ORDER BY posted_at DESC",
-        (cutoff,)
-    ).fetchall()
-
-    # Separate SOLD messages from active candidates
-    sold_msgs = []
-    active_candidates = []
-    for m in all_msgs:
-        text = m["message_text"] or ""
-        if re.search(r'\bSOLD\b', text, re.I):
-            sold_msgs.append(m)
-        elif f"{m['channel_handle']}-{m['message_id']}" in current_ids:
-            active_candidates.append(m)
-
-    # Active by item number
-    active_by_item = defaultdict(list)
-    for m in active_candidates:
-        item = extract_item_number(m["message_text"] or "")
-        if item:
-            active_by_item[(m["channel_handle"] or "").lower(), item].append(m)
-
-    # Active by (channel, brand)
-    active_by_brand = defaultdict(list)
-    for m in active_candidates:
-        brand = extract_brand_local(m["message_text"] or "")
-        if brand:
-            active_by_brand[(m["channel_handle"] or "").lower(), brand].append(m)
-
-    removed = {}  # listing_id → reason
-    strategies = {"item_number": 0, "brand_model": 0}
-
-    for sm in sold_msgs:
-        s_text = sm["message_text"] or ""
-        s_channel = (sm["channel_handle"] or "").lower()
-        s_date = sm["posted_at"][:10] if sm["posted_at"] else ""
-
-        # ── Strategy 1: Item number match ──
-        item = extract_item_number(s_text)
-        if item:
-            candidates = active_by_item.get((s_channel, item), [])
-            for c in candidates:
-                c_id = f"{c['channel_handle']}-{c['message_id']}"
-                if c_id not in removed:
-                    if c["posted_at"] and c["posted_at"][:10] <= s_date:
-                        removed[c_id] = f"Item {item} sold ({sm['message_id']})"
-                        strategies["item_number"] += 1
-
-        # Strategy 2 (cross-message batch-SOLD parsing) was removed: every
-        # "[WATCH DEALS ...]" batch post contains the word "SOLD" somewhere
-        # (older items are kept for reference), so it always landed in
-        # sold_msgs above and never in active_candidates — this strategy
-        # could never find a batch listing to match against, confirmed
-        # against the full live corpus (0/95 batch posts ever appeared in
-        # active_candidates). parser/batch.py now splits these posts into
-        # per-item listings directly from each item's own status marker,
-        # which makes this cross-message approach unnecessary as well as
-        # non-functional.
-
-        # ── Strategy 3: Brand + model match (same channel, sold after listing) ──
-        s_brand = extract_brand_local(s_text)
-        if s_brand and not item:  # only if strategy 1 didn't apply
-            candidates = active_by_brand.get((s_channel, s_brand), [])
-            # Try to extract model from SOLD message
-            s_model, _ = filt_extract_model(s_text, s_brand)
-
-            for c in candidates:
-                c_id = f"{c['channel_handle']}-{c['message_id']}"
-                if c_id in removed:
-                    continue
-                c_text = c["message_text"] or ""
-                c_price = extract_price(c_text)
-
-                if c["posted_at"] and c["posted_at"][:10] <= s_date:
-                    # If we have a model match, high confidence
-                    if s_model:
-                        c_model, _ = filt_extract_model(c_text, s_brand)
-                        if c_model and s_model.lower() == c_model.lower():
-                            removed[c_id] = f"Brand+model match: {s_brand} {s_model} sold ({sm['message_id']})"
-                            strategies["brand_model"] += 1
-                    # No model match but same brand — only match if price range matches
-                    elif c_price:
-                        s_price = extract_price(s_text)
-                        if s_price and abs(s_price - c_price) / max(s_price, c_price) < 0.15:
-                            removed[c_id] = f"Brand+price match: {s_brand} ${s_price} sold ({sm['message_id']})"
-                            strategies["brand_model"] += 1
-
+    rows = list(conn.execute(
+        "SELECT channel_handle, message_id, posted_at, message_text, "
+        "       reply_to_message_id, edit_count, text_updated_at, first_seen_at "
+        "FROM raw_messages"
+    ))
     conn.close()
 
-    # Build output — since active_candidates was already scoped to
-    # current_ids above, every match here is already a real candidate, but
-    # keep the explicit filter as a guard in case that invariant ever changes.
-    matched_removals = {k: v for k, v in removed.items() if k in current_ids}
-    removal_ids = list(matched_removals.keys())
+    by_id = {(r["channel_handle"], r["message_id"]): r for r in rows}
+
+    removed = {}
+    strategies = {"reply_link": 0, "edited_to_sold": 0}
+    time_to_sell = []
+
+    # ── 1. Reply links ──
+    for r in rows:
+        if not r["reply_to_message_id"] or not SOLD_RE.search(r["message_text"] or ""):
+            continue
+        # Walk the chain: dealers reply SOLD to their own previous SOLD.
+        target = (r["channel_handle"], r["reply_to_message_id"])
+        for _ in range(MAX_CHAIN_HOPS):
+            parent = by_id.get(target)
+            if parent is None:
+                target = None
+                break
+            if not SOLD_RE.search(parent["message_text"] or ""):
+                break                      # reached something that is not a sold notice
+            if not parent["reply_to_message_id"]:
+                target = None
+                break
+            target = (parent["channel_handle"], parent["reply_to_message_id"])
+        else:
+            target = None
+
+        if not target or target not in current:
+            continue
+        lid = current[target]
+        if lid in removed:
+            continue
+        removed[lid] = f"Dealer replied SOLD to this listing (msg {r['message_id']})"
+        strategies["reply_link"] += 1
+
+        parent = by_id.get(target)
+        days = _days_between(parent["posted_at"], r["posted_at"]) if parent else None
+        if days is not None and 0 <= days <= 365:
+            time_to_sell.append(days)
+
+    # ── 2. Listings edited to say SOLD ──
+    for key, lid in current.items():
+        if lid in removed:
+            continue
+        r = by_id.get(key)
+        if r is None or not r["edit_count"]:
+            continue
+        if not SOLD_RE.search(r["message_text"] or ""):
+            continue
+        if _is_migration_artifact(r["text_updated_at"]):
+            continue                        # a text correction, not a dealer edit
+        removed[lid] = "Listing was edited to say SOLD"
+        strategies["edited_to_sold"] += 1
+        days = _days_between(r["first_seen_at"], r["text_updated_at"])
+        if days is not None and 0 <= days <= 365:
+            time_to_sell.append(days)
+
+    time_to_sell.sort()
+
+    def _pct(p):
+        return time_to_sell[int(len(time_to_sell) * p)] if time_to_sell else None
 
     output = {
         "generated": datetime.now(SGT).isoformat(),
-        "total_removed": len(removal_ids),
+        "total_removed": len(removed),
         "strategies": strategies,
-        "removed_ids": removal_ids,
-        "reasons": matched_removals,
+        "removed_ids": list(removed.keys()),
+        "reasons": removed,
+        "time_to_sell": {
+            "samples": len(time_to_sell),
+            "median_days": _pct(0.5),
+            "p25_days": _pct(0.25),
+            "p75_days": _pct(0.75),
+        },
     }
-
     REMOVED_OUT.parent.mkdir(parents=True, exist_ok=True)
     REMOVED_OUT.write_text(json.dumps(output, indent=2))
-    print(f"Sold tracer: removed {len(removal_ids)} listings")
-    print(f"  Item number matches: {strategies['item_number']}")
-    print(f"  Brand/model matches: {strategies['brand_model']}")
-
+    print(f"Sold tracer: {len(removed)} listing(s) marked sold "
+          f"({strategies['reply_link']} by reply link, "
+          f"{strategies['edited_to_sold']} by edit)")
+    if time_to_sell:
+        print(f"  Time to sell: median {_pct(0.5)}d "
+              f"(p25 {_pct(0.25)}d, p75 {_pct(0.75)}d, n={len(time_to_sell)})")
     return output
 
 

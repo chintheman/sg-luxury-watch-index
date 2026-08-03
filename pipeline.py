@@ -72,14 +72,28 @@ def check_anomalies():
     if removed_path.exists():
         removed = json.loads(removed_path.read_text())
         strategies = removed.get("strategies", {})
-        candidates_found = sum(strategies.values())
         total_removed = removed.get("total_removed", 0)
-        print(f"  Sold tracer: {candidates_found} candidate match(es) found, {total_removed} removed")
-        if candidates_found and total_removed != candidates_found:
+        tts = removed.get("time_to_sell", {})
+        print(f"  Sold tracer: {total_removed} marked sold "
+              f"({strategies.get('reply_link', 0)} by reply link, "
+              f"{strategies.get('edited_to_sold', 0)} by edit)"
+              + (f", median {tts['median_days']}d to sell" if tts.get("median_days") is not None else ""))
+        if total_removed == 0:
             flags.append(
-                f"Sold tracer found {candidates_found} candidate match(es) but only "
-                f"{total_removed} were actually removed — investigate the gap."
+                "Sold tracer marked nothing sold. It ran at 0 for months before "
+                "reply links were captured, so a zero here means the signal has "
+                "broken again rather than that nothing sold."
             )
+
+    signals_path = ROOT / "data" / "signals.json"
+    if signals_path.exists():
+        sig = json.loads(signals_path.read_text())
+        tts = (sig.get("time_to_sell") or {}).get("overall") or {}
+        pm = sig.get("price_movement", {})
+        inv = sig.get("inventory", {})
+        print(f"  Signals: {tts.get('n', 0)} confirmed sales (median "
+              f"{tts.get('median', '-')}d), {pm.get('price_cuts', 0)} price cuts, "
+              f"inventory looks {inv.get('apparent_inflation_pct', 0)}% deeper than it is")
 
     index_path = ROOT / "data" / "index.json"
     if index_path.exists():
@@ -154,7 +168,10 @@ def main():
     # Step 2: Export filtered listings JSON
     run_step("Export listings", "python3 index/export_pipeline.py --link-check")
 
-    # Step 3: Surface data-quality anomalies for review
+    # Step 3: Derived market signals (time to sell, price movement, inventory)
+    run_step("Signals", "python3 index/signals.py")
+
+    # Step 4: Surface data-quality anomalies for review
     check_anomalies()
 
     print("\n✅ Pipeline complete.")
