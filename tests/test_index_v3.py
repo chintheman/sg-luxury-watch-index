@@ -26,7 +26,7 @@ def idx():
 # ── Version and parameters ─────────────────────────────────────────────────
 
 def test_index_reports_v3(idx):
-    assert idx["meta"]["version"] == "3.0"
+    assert idx["meta"]["version"].startswith("3.")
 
 
 def test_prestige_is_no_longer_used_for_weighting():
@@ -145,3 +145,36 @@ def test_baseline_covers_the_major_brands(idx):
     weighted = set(idx["brand_weights"])
     for b in majors:
         assert b in weighted, f"{b} has {counts[b]} listings but no weight"
+
+
+# ── Matched-model (v3.1) ───────────────────────────────────────────────────
+
+def test_records_are_matched_at_model_level():
+    """A brand's median moves when the MIX of references changes, not only
+    when prices change. Rolex read -25% at brand level while its actual
+    references were flat to up; matched, the same comparison reads +13%."""
+    src = (ROOT / "index" / "index_engine.py").read_text()
+    assert "UNIT_REF_MIN_LISTINGS" in src
+    assert "def brand_ratios_on" in src
+    # the composite must be built from matched ratios, not raw brand medians
+    loop = src[src.index("for date in dates_sorted:"):src.index("# \u2500\u2500 Retail-anchored composite")]
+    assert "brand_ratios_on(date)" in loop
+
+
+def test_matched_index_is_quieter_than_brand_level(idx):
+    """Removing mix noise should reduce volatility, not add to it."""
+    fresh = [p["value"] for p in idx["composite"]["series"]
+             if p["value"] is not None and not p.get("stale")]
+    if len(fresh) < 10:
+        pytest.skip("not enough fresh points")
+    moves = [abs(fresh[i] - fresh[i - 1]) / fresh[i - 1] * 100 for i in range(1, len(fresh))]
+    assert sum(moves) / len(moves) < 3.5
+
+
+def test_no_year_is_parsed_as_a_price():
+    """Article slugs like 'price-increase-2025' were read as $2,025."""
+    from filter import extract_price
+    assert extract_price("rolex-retail-price-increase-2025-confirmed") is None
+    assert extract_price("https://x.com/news/rolex-price-2026-daytona/") is None
+    # a genuine price in that numeric range must still parse
+    assert extract_price("SGD $2,025") == 2025

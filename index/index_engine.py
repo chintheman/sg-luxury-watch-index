@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-SG Luxury Watch Index — Index Engine v3.0
+SG Luxury Watch Index — Index Engine v3.1
 =========================================
 Produces a family of indices from Telegram secondary-market listings.
 
@@ -52,7 +52,7 @@ DB = BASE / "data" / "listings.db"
 OUT = BASE / "data" / "index.json"
 
 ANCHOR_VALUE = 1.0
-INDEX_VERSION = "3.0"
+INDEX_VERSION = "3.1"
 MIN_BASELINE_SAMPLES = 3
 
 # ── v3 pooling parameters ─────────────────────────────────────────────────
@@ -98,6 +98,24 @@ AVAILABILITY_ROLLING_DAYS = 60
 # long period and blend eras; that is still far better than excluding the
 # brand from its own market index.
 BASELINE_SAMPLE_TARGET = 30
+
+# ── Matched-model matching ────────────────────────────────────────────────
+# A brand's median price moves when the MIX of references listed changes, not
+# only when prices change. Measured: Rolex's brand-level index read -25%,
+# but at reference level its actual models were flat to slightly up (126334
+# -3%, 126234 +6%, 278271 +11%). The baseline sample was Submariners and
+# Daytonas; today's listings are dominated by Datejust, the cheapest common
+# Rolex. The index was reading a change in WHAT IS LISTED as a change in
+# PRICE. Matched at model level the same comparison reads +13%.
+#
+# Each listing is assigned a matching unit, most specific first:
+#   reference number, when that reference has enough listings to be stable
+#   model name,       when the reference is unknown or too thin
+#   brand,            last resort
+# Every unit is measured against its OWN baseline, and units aggregate up to
+# brands. This covers 99% of listings across 256 units.
+UNIT_REF_MIN_LISTINGS = 8
+UNIT_MODEL_MIN_LISTINGS = 3
 
 # ── Prestige weights (0-10, from Chrono24 + horological consensus) ──
 # Gerald Genta, Parmigiani Fleurier, Roger Dubuis, Louis Moinet, Glashutte
@@ -471,6 +489,7 @@ def build_indices():
             "brand": brand, "price": price, "cond": extract_condition(text),
             "date": date, "retail": retail, "retail_method": retail_method,
             "ref": extract_model(text, brand)[1] if HAS_FILTER else None,
+            "model": extract_model(text, brand)[0] if HAS_FILTER else None,
             "stock_code": attrs.get("stock_code"),
         }
 
@@ -510,6 +529,24 @@ def build_indices():
     records, dstats = dedupe(records)
     print(f"Dedupe: {dstats['removed']} repost(s) collapsed ({dstats['removed_pct']}%), "
           f"{len(records)} unique watches remain")
+
+    # ── Assign each record its matching unit (see UNIT_* above) ──
+    ref_counts = Counter((r["brand"], r["ref"]) for r in records if r.get("ref"))
+    model_counts = Counter((r["brand"], r["model"]) for r in records if r.get("model"))
+
+    def _unit(r):
+        if r.get("ref") and ref_counts[(r["brand"], r["ref"])] >= UNIT_REF_MIN_LISTINGS:
+            return ("ref", r["brand"], r["ref"])
+        if r.get("model") and model_counts[(r["brand"], r["model"])] >= UNIT_MODEL_MIN_LISTINGS:
+            return ("model", r["brand"], r["model"])
+        return ("brand", r["brand"], None)
+
+    for r in records:
+        r["unit"] = _unit(r)
+    tier_counts = Counter(r["unit"][0] for r in records)
+    print(f"Matching units: {len(set(r['unit'] for r in records))} distinct "
+          f"({tier_counts.get('ref',0)} by reference, {tier_counts.get('model',0)} by model, "
+          f"{tier_counts.get('brand',0)} brand-level fallback)")
 
     records.sort(key=lambda r: r["date"])
     all_dates = sorted(set(r["date"] for r in records))
@@ -558,8 +595,24 @@ def build_indices():
     # actually excluded before taking the median, not just flagged.
     baseline_median = {}
     baseline_outliers_excluded = 0
-    prices_by_brand = defaultdict(list)
+    # Unit-level baselines are what the composite is actually built on. The
+    # brand-level baseline below is kept only for the retail and condition
+    # sub-series, which do not decompose by model.
+    prices_by_unit = defaultdict(list)
     for r in records:                      # records are already date-sorted
+        prices_by_unit[r["unit"]].append(r["price"])
+    unit_baseline = {}
+    for unit, prices in prices_by_unit.items():
+        result = compute_baseline_median(prices[:BASELINE_SAMPLE_TARGET])
+        if result is not None:
+            unit_baseline[unit] = result[0]
+    unit_volume = {u: len(v) for u, v in prices_by_unit.items()}
+    covered = sum(unit_volume[u] for u in unit_baseline)
+    print(f"Unit baselines: {len(unit_baseline)} of {len(prices_by_unit)} units, "
+          f"covering {covered} listings ({100*covered/len(records):.0f}%)")
+
+    prices_by_brand = defaultdict(list)
+    for r in records:
         prices_by_brand[r["brand"]].append(r["price"])
     for brand in all_brands:
         prices = prices_by_brand[brand][:BASELINE_SAMPLE_TARGET]
@@ -623,6 +676,42 @@ def build_indices():
             wdate = dates_sorted[j]
             for brand, prices in daily_by_brand[wdate].items():
                 windowed_by_brand[date][brand].extend(prices)
+
+    # Same pooling, but per matching unit — this is what the composite uses.
+    daily_by_unit = defaultdict(lambda: defaultdict(list))
+    for r in records:
+        daily_by_unit[r["date"]][r["unit"]].append(r["price"])
+    windowed_by_unit = defaultdict(lambda: defaultdict(list))
+    for i, date in enumerate(dates_sorted):
+        for j in range(max(0, i - WINDOW_DAYS + 1), i + 1):
+            wdate = dates_sorted[j]
+            for unit, prices in daily_by_unit[wdate].items():
+                windowed_by_unit[date][unit].extend(prices)
+
+    def brand_ratios_on(date):
+        """Each brand's price level relative to its own baseline, built from
+        matched models so a change in WHICH references are listed cannot
+        masquerade as a price move.
+
+        A unit qualifies with MIN_PER_BRAND listings in the window. Units are
+        combined into a brand by their overall listing volume, so a brand's
+        common references carry its number rather than whichever happened to
+        be posted today.
+        """
+        out = {}
+        agg = defaultdict(lambda: [0.0, 0.0, 0])   # brand -> [num, den, listings]
+        for unit, prices in windowed_by_unit[date].items():
+            if unit not in unit_baseline or len(prices) < MIN_PER_BRAND:
+                continue
+            brand = unit[1]
+            w = unit_volume.get(unit, 1)
+            agg[brand][0] += w * (median(prices) / unit_baseline[unit])
+            agg[brand][1] += w
+            agg[brand][2] += len(prices)
+        for brand, (num, den, n) in agg.items():
+            if den > 0:
+                out[brand] = (num / den, n)
+        return out
 
     # Availability score's ceiling: a rolling trailing max, not a fixed
     # all-time max. The channel roster isn't constant over the ~250-day
@@ -694,17 +783,13 @@ def build_indices():
 
     for date in dates_sorted:
         day = windowed_by_brand[date]
-        day_median = {}
-        for brand, prices in day.items():
-            if brand in baseline_median and len(prices) >= MIN_PER_BRAND:
-                day_median[brand] = median(prices)
+        ratios_today = brand_ratios_on(date)
 
-        if len(day_median) >= MIN_BRANDS_PER_COMPOSITE:
+        if len(ratios_today) >= MIN_BRANDS_PER_COMPOSITE:
             weighted_sum = 0.0
             weight_used = 0.0
-            for brand, mp in day_median.items():
+            for brand, (ratio, _n) in ratios_today.items():
                 bw = brand_weight.get(brand, 0)
-                ratio = mp / baseline_median[brand]
                 weighted_sum += bw * ratio
                 weight_used += bw
             val = round(ANCHOR_VALUE * weighted_sum / weight_used, 4) if weight_used > 0 else None
@@ -712,7 +797,7 @@ def build_indices():
             val = None
         composite.append({
             "date": date, "value": val,
-            "brands_tracked": len(day_median),
+            "brands_tracked": len(ratios_today),
             "total_listings": sum(len(p) for p in day.values()),
         })
 
@@ -785,11 +870,8 @@ def build_indices():
             continue
         bidx = []
         for date in dates_sorted:
-            day = windowed_by_brand[date]
-            if brand in day and len(day[brand]) >= MIN_PER_BRAND:
-                val = round(ANCHOR_VALUE * median(day[brand]) / baseline_median[brand], 4)
-            else:
-                val = None
+            r = brand_ratios_on(date).get(brand)
+            val = round(ANCHOR_VALUE * r[0], 4) if r else None
             bidx.append({"date": date, "value": val})
         brand_subindices[brand] = fill_series(bidx)
 
@@ -855,24 +937,21 @@ def build_indices():
     contributions_total = 0.0
     if len(composite) > 1 and len(dates_sorted) > 1:
         t_win = windowed_by_brand[dates_sorted[-1]]
-        y_win = windowed_by_brand[dates_sorted[-2]]
-
-        def _qualifying(win):
-            return {b: median(p) for b, p in win.items()
-                    if b in baseline_median and len(p) >= MIN_PER_BRAND}
-
-        t_med, y_med = _qualifying(t_win), _qualifying(y_win)
+        t_all = brand_ratios_on(dates_sorted[-1])
+        y_all = brand_ratios_on(dates_sorted[-2])
+        t_med = {b: v[0] for b, v in t_all.items()}
+        y_med = {b: v[0] for b, v in y_all.items()}
         W_t = sum(brand_weight.get(b, 0) for b in t_med) or 1.0
         W_y = sum(brand_weight.get(b, 0) for b in y_med) or 1.0
-        V_t = sum(brand_weight.get(b, 0) * (m / baseline_median[b]) for b, m in t_med.items()) / W_t
-        V_y = sum(brand_weight.get(b, 0) * (m / baseline_median[b]) for b, m in y_med.items()) / W_y
+        V_t = sum(brand_weight.get(b, 0) * m for b, m in t_med.items()) / W_t
+        V_y = sum(brand_weight.get(b, 0) * m for b, m in y_med.items()) / W_y
 
         shared = set(t_med) & set(y_med)
         explained = 0.0
         for brand in sorted(shared):
             bw = brand_weight.get(brand, 0)
-            t_ratio = t_med[brand] / baseline_median[brand]
-            y_ratio = y_med[brand] / baseline_median[brand]
+            t_ratio = t_med[brand]
+            y_ratio = y_med[brand]
             contrib = bw / W_t * (t_ratio - y_ratio)
             explained += contrib
             brand_contribs.append((brand, contrib, len(t_win.get(brand, []))))
@@ -962,8 +1041,11 @@ def build_indices():
             "version": INDEX_VERSION,
             "methodology": (
                 "Weighted composite of secondary-market asking prices from "
-                "Singapore Telegram watch dealer channels. Each brand is "
-                "measured against its own first-180-day baseline median, and "
+                "Singapore Telegram watch dealer channels. Prices are matched "
+                "at model level: each reference (or model, where the reference "
+                "is unknown) is measured against its own baseline, so a change "
+                "in which watches are listed cannot be mistaken for a change in "
+                "price. Models aggregate to brands, and "
                 "brands are weighted by the square root of their recent "
                 "listing volume — liquidity decides the weight, damped so no "
                 "single brand dominates. Prices are pooled over a "
