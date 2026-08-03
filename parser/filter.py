@@ -291,7 +291,12 @@ def extract_price(text):
     # dealer who appends an "Installment Plans" line to every post has the
     # whole message rejected below, price and all — which is what silenced
     # HengWatch's 2,100 listings.
-    clean = decode_emoji_digits(normalize_currency_emoji(strip_noise_lines(text)))
+    # Strip URLs first. Article slugs like
+    # ".../rolex-retail-price-increase-2025-price-hike/" put a year right
+    # after the word "price", which the labelled-bare-price pattern below
+    # then read as an asking price.
+    clean = re.sub(r'https?://\S+', ' ', text)
+    clean = decode_emoji_digits(normalize_currency_emoji(strip_noise_lines(clean)))
     raw_multiline = clean            # keep newlines for the labelled-bare match
     clean = clean.replace('\n', ' ').replace('\\n', ' ')
     
@@ -367,7 +372,13 @@ def extract_price(text):
     if m:
         try:
             num = float(m.group(1))
-            if 500 <= num <= 5000000:
+            # A bare 4-digit number in the year range next to the word
+            # "price" is far more often a model year or an article date than
+            # an asking price. Require an explicit currency marker to accept
+            # one; a genuine $2,025 watch will carry a symbol.
+            looks_like_year = 1990 <= num <= 2035
+            has_currency = bool(re.search(r'[$€£]|\bSGD?\b', raw_multiline, re.I))
+            if 500 <= num <= 5000000 and not (looks_like_year and not has_currency):
                 return int(num)
         except ValueError:
             pass
