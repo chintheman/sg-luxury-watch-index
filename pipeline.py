@@ -17,6 +17,21 @@ ROOT = Path(__file__).resolve().parent
 # Day-over-day composite index move beyond this is flagged for review.
 INDEX_SWING_ALERT_PCT = 8.0
 
+# The published Zo space route is deployed by hand (Zo exposes no deploy API),
+# so it can silently fork from web/routes/. It already did once: the copy kept
+# in 0xsteamboat-me-docs was a stale reconstruction missing brandSubindices
+# and computeBrand1dChange entirely. This check lives here rather than in
+# GitHub CI because it needs both this box's data files and network access to
+# the live endpoint -- neither exists in a CI runner.
+DRIFT_CHECK = ROOT / "web" / "check_drift.ts"
+
+# Does the live page still get every field it reads? The page has no fallback
+# (watches.tsx does .catch(e => setError(e.message))), so a field this pipeline
+# stops emitting becomes an error state for real visitors. Checked against the
+# full public chain, not in-process, so a break anywhere in
+# www.0xsteamboat.me -> server.ts proxy -> Zo route -> data files is caught.
+CONTRACT_CHECK = ROOT / "web" / "check_contract.ts"
+
 def run_step(name, cmd):
     print(f"\n{'='*60}")
     print(f"  STEP: {name}")
@@ -82,6 +97,45 @@ def check_anomalies():
                 f"Composite index hasn't had a fresh (non-carried-forward) value in "
                 f"{days_since_fresh} day(s) — too few brands have enough listings right now."
             )
+
+    # ── Deployed-route drift ──
+    if DRIFT_CHECK.exists():
+        try:
+            result = subprocess.run(["bun", str(DRIFT_CHECK)], cwd=str(ROOT),
+                                     capture_output=True, text=True, timeout=180)
+            if result.returncode == 0:
+                print("  Route drift: deployed /api/watch-listings matches the repo")
+            else:
+                lines = (result.stdout or result.stderr or "").strip().splitlines()
+                summary = next((l.strip() for l in lines if "DRIFT" in l or "HTTP" in l),
+                               "see pipeline output")
+                print(f"  Route drift: MISMATCH — {summary}")
+                flags.append(
+                    "Deployed Zo route /api/watch-listings no longer matches "
+                    "web/routes/api-watch-listings.ts — it was edited outside the repo. "
+                    f"{summary}"
+                )
+        except Exception as e:
+            print(f"  Route drift: check could not run ({e})")
+
+    # ── Public page contract ──
+    if CONTRACT_CHECK.exists():
+        try:
+            result = subprocess.run(["bun", str(CONTRACT_CHECK)], cwd=str(ROOT),
+                                     capture_output=True, text=True, timeout=180)
+            if result.returncode == 0:
+                print("  Page contract: www.0xsteamboat.me/watches has every field it needs")
+            else:
+                bad = [l.strip() for l in (result.stdout or "").splitlines() if l.startswith("✗")]
+                fatal = [l.strip() for l in (result.stderr or "").splitlines() if "FATAL" in l]
+                detail = "; ".join(fatal or bad) or "see pipeline output"
+                print(f"  Page contract: BROKEN — {detail}")
+                flags.append(
+                    "www.0xsteamboat.me/watches WILL BREAK — the API no longer returns "
+                    f"a field the page reads. {detail}"
+                )
+        except Exception as e:
+            print(f"  Page contract: check could not run ({e})")
 
     if flags:
         print("\n  ⚠ Anomalies flagged for review:")
