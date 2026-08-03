@@ -133,6 +133,17 @@ export default async (c: Context) => {
         brandSub: brandSubindices,
         brandsTracked: indexDataObj.meta?.tracked_brands,
         anchorDate: indexDataObj.meta?.anchor_date,
+        // The engine computes these and the page needs them to tell the truth.
+        // They were being dropped here, so a carried-forward value rendered
+        // identically to a freshly computed one.
+        stale: indexDataObj.composite?.stale ?? null,
+        daysSinceFresh: indexDataObj.composite?.days_since_fresh ?? null,
+        // The date the series ACTUALLY begins. anchor_date is when the data
+        // first met the inclusion criteria, which is earlier and is not when
+        // the index started — the page was presenting it as "Since ...".
+        firstComputedDate: indexDataObj.meta?.first_computed?.date ?? null,
+        methodologyVersion: indexDataObj.meta?.version ?? null,
+        methodology: indexDataObj.meta?.methodology ?? "",
         insight: indexDataObj.insights?.composite || "",
         brandContribs: (indexDataObj.brand_contributions || []).slice(0, 5),
       } : null,
@@ -142,38 +153,9 @@ export default async (c: Context) => {
   }
 };
 
-// Inline model extraction (mirrors filter.py)
-const MODEL_NAMES = [
-  /Submariner|GMT-Master|Daytona|Datejust|Explorer|Yacht-Master|Day-Date|Sea-Dweller|Sky-Dweller|Air-King|Milgauss|OP/i,
-  /Speedmaster|Seamaster|Planet Ocean|Aqua Terra|Constellation|De Ville|Globemaster/i,
-  /Santos|Tank|Panthère|Ballon Bleu|Ronde|Tortue|Calibre|Drive/i,
-  /Black Bay|Pelagos|Royal|1926|North Flag|Fastrider|Heritage/i,
-  /Royal Oak|Millenary|Code 11|Jules Audemars/i,
-  /Nautilus|Aquanaut|Calatrava|Grand Complications|Twenty~4/i,
-  /Portofino|Pilot|Ingenieur|Aquatimer|Da Vinci|Portugieser/i,
-  /Luminor|Radiomir|Submersible|Mare Nostrum/i,
-  /Big Bang|Classic Fusion|Spirit|King Power|Square Bang/i,
-  /Carrera|Monaco|Aquaracer|Formula 1|Link|Autavia/i,
-  /Overseas|Patrimony|Traditionnelle|Malte|Fiftysix|Historiques/i,
-  /Prospex|Presage|Astron|5 Sports|Coutura/i,
-  /Classique|Marine|Type XX|Tradition|Héritage|Reine de Naples/i,
-  /Lange 1|Zeitwerk|Saxonia|Odysseus|1815|Richard Lange/i,
-];
-const REF_RE = /\b(\d{3,6}(?:\.\d{2,4}){0,4}[A-Z]{0,4})\b/;
-
-function extractModel(text: string, _brand: string): string | null {
-  if (!text) return null;
-  for (const pat of MODEL_NAMES) {
-    const m = text.match(pat);
-    if (m) {
-      const model = m[0];
-      const ref = text.match(REF_RE)?.[1];
-      return ref ? `${model} ${ref}` : model;
-    }
-  }
-  const ref = text.match(REF_RE)?.[1];
-  return ref || null;
-}
+// NOTE: a copy of filter.py's model-extraction regexes used to live here and
+// was never called — the pipeline supplies the model as `md`. It has been
+// removed rather than left to drift silently out of sync with the parser.
 
 function cleanTitle(text: string): string {
   if (!text) return "";

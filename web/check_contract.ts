@@ -86,6 +86,24 @@ for (const k of ["change_1d_pct", "change_7d_pct", "change_30d_pct", "change_90d
     `the ${k.replace("change_", "").replace("_pct", "").toUpperCase()} tile prints a non-number`);
 }
 
+// ── Honesty fields (added in Phase 7) ──
+// These exist so the page can disclose when a value is carried forward and
+// where the series really starts. They were computed by the engine and
+// silently dropped by this API for months; the contract now holds them.
+record("index.stale", idx.stale === null || typeof idx.stale === "boolean",
+  String(idx.stale), "the page cannot tell a carried-forward value from a fresh one");
+record("index.daysSinceFresh", idx.daysSinceFresh === null || isNum(idx.daysSinceFresh),
+  String(idx.daysSinceFresh), "the staleness marker cannot say how old the reading is");
+record("index.firstComputedDate",
+  idx.firstComputedDate === null || typeof idx.firstComputedDate === "string",
+  String(idx.firstComputedDate), "the footer falls back to implying history that does not exist");
+record("index.methodology", typeof idx.methodology === "string" && idx.methodology.length > 40,
+  `${(idx.methodology || "").length} chars`,
+  "the methodology note empties out, or drifts from the maths again");
+record("index.methodologyVersion",
+  idx.methodologyVersion === null || typeof idx.methodologyVersion === "string",
+  String(idx.methodologyVersion), "the page cannot state which methodology produced the number");
+
 // ── Per-listing fields: every one is read in the listing row ──
 const REQUIRED_LISTING = ["id", "date", "brand", "title", "price", "condition", "channel", "photos", "link"];
 const sample = (payload.listings ?? []).slice(0, 50);

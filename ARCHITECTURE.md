@@ -31,11 +31,12 @@ retired copy of it that looks live but is not.
 
 ## Traps
 
-**The Zo space route `/watches` is DEAD.** `0xsteamboat.zo.computer/watches`
-returns 302. It is a retired earlier version of the page and still contains
-plausible-looking code — claims about "15 channels", brand cards showing
-volume counts, a `insight` useMemo. **None of it is live.** Editing it does
-nothing. The real page is `0xsteamboat-me/src/pages/watches.tsx`.
+**The Zo space route `/watches` no longer exists.** It was a retired earlier
+version of the page, kept private so it 302'd to a login screen, and it still
+contained plausible-looking code — claims about "15 channels", brand cards
+with volume counts, an `insight` useMemo. None of it was live, and it cost a
+full audit pass before that was noticed. Deleted 2026-08-03. The real page is
+`0xsteamboat-me/src/pages/watches.tsx` and always was.
 
 **The Zo space route `/api/watch-listings` is LIVE and load-bearing.** Its
 source of truth is `web/routes/api-watch-listings.ts` in this repo. Zo exposes
