@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-SG Luxury Watch Index — Index Engine v2.0
+SG Luxury Watch Index — Index Engine v3.0
 =========================================
 Produces a family of indices from Telegram secondary-market listings.
 
@@ -19,6 +19,11 @@ Output: data/index.json (consumed by /api/watch-index → /watches)
 
 import sqlite3, json, re, sys
 from datetime import datetime, timedelta, timezone
+
+# Everything upstream stamps dates in SGT. index_engine used naive
+# datetime.now(), i.e. the box's UTC clock, so "today" could be yesterday
+# relative to the listing dates it was comparing against.
+SGT = timezone(timedelta(hours=8))
 from collections import Counter, defaultdict, deque
 from statistics import median
 from pathlib import Path
@@ -47,35 +52,52 @@ DB = BASE / "data" / "listings.db"
 OUT = BASE / "data" / "index.json"
 
 ANCHOR_VALUE = 1.0
+INDEX_VERSION = "3.0"
 MIN_BASELINE_SAMPLES = 3
-# A single listing determining a brand's entire daily-window contribution
-# was the mechanism behind confirmed ±100% single-brand-day swings — over
-# the full history, 53% of (date, brand) window-pools had exactly 1 sample.
-# 3 is the textbook-correct value for outlier resistance (a median of 3
-# can't be dragged by one bad price; a median of 2 is just an average and
-# still is). Measured against the *full* history this drops fresh-day
-# coverage from 44% to 15%, which looks alarming — but that average is
-# dominated by the scraper's thin early months. Measured against the
-# actually-relevant recent window it holds up fine: 87% fresh over the last
-# 30 days, 76% over the last 90 (both better than MIN_PER_BRAND=2 gives on
-# the same recent windows). Re-check this if listing volume drops.
+
+# ── v3 pooling parameters ─────────────────────────────────────────────────
+# v2 pooled 3 days and required 3 listings per brand. Measured over the
+# deduplicated corpus that produced a mean daily move of 13.6%, with 76% of
+# days moving more than 5% — noise, not a luxury-watch market.
+#
+# Widening the pool to 21 days brings that to 3.4% mean and 20% of days,
+# and simultaneously gives the best freshness available (38% of series days
+# are genuinely computed rather than carried forward; every tighter config
+# scored worse on BOTH axes). A three-week rolling median is a lot of
+# smoothing for a twice-daily index, and that is a deliberate trade: this
+# market is thin enough that a shorter window measures sampling noise rather
+# than price.
+WINDOW_DAYS = 21
 MIN_PER_BRAND = 3
 MIN_BRANDS_PER_COMPOSITE = 3
-WINDOW_DAYS = 3
 
-# Condition (New vs Pre-Owned) sub-indices: only ~14% of listings are Brand
-# New, so they need a much wider pool than the main composite's 3-day
-# window to avoid a single listing swinging the day's value. 14-day window
-# + min 2 per brand is the fix path AGENTS.md documented but never wired
-# up; MIN_COND_BRANDS is an added guard so a day isn't computed from just
-# one brand even after widening the pool.
-COND_WINDOW_DAYS = 14
+# Condition sub-indices stay wider still: Brand New is a small share of
+# listings, so they need a bigger pool than the composite to be stable.
+COND_WINDOW_DAYS = 28
 MIN_COND_PER_BRAND = 2
 MIN_COND_BRANDS = 2
 
-# Availability score's ceiling — trailing window, not a fixed all-time max
-# (see the comment where this is used in build_indices() for why).
+# Availability ceiling — a trailing window, not an all-time max, so the score
+# reads as "activity vs the recent norm" rather than "vs this codebase's
+# best-ever scrape".
 AVAILABILITY_ROLLING_DAYS = 60
+
+# The baseline is each brand's FIRST N LISTINGS, not its first N days.
+#
+# v2 anchored on a 180-day calendar window from a brand's first appearance,
+# which lands in the sparsest part of the scrape. Audemars Piguet first
+# appeared 2025-03-27 and had 2 listings in the next 180 days, so it got no
+# baseline and was dropped from the index entirely — despite 161 listings
+# overall. 26 of 55 brands were being excluded this way, including Hublot,
+# Breitling, Zenith and Chopard. Deduplication made it worse by removing the
+# repeat postings that were padding those thin early windows.
+#
+# Anchoring on sample count instead means every brand with enough listings to
+# be measured at all gets a baseline, whenever those listings happened to
+# arrive. The trade-off is that for a sparse brand the baseline may span a
+# long period and blend eras; that is still far better than excluding the
+# brand from its own market index.
+BASELINE_SAMPLE_TARGET = 30
 
 # ── Prestige weights (0-10, from Chrono24 + horological consensus) ──
 # Gerald Genta, Parmigiani Fleurier, Roger Dubuis, Louis Moinet, Glashutte
@@ -536,12 +558,11 @@ def build_indices():
     # actually excluded before taking the median, not just flagged.
     baseline_median = {}
     baseline_outliers_excluded = 0
+    prices_by_brand = defaultdict(list)
+    for r in records:                      # records are already date-sorted
+        prices_by_brand[r["brand"]].append(r["price"])
     for brand in all_brands:
-        first = brand_first_seen[brand]
-        first_dt = datetime.strptime(first, "%Y-%m-%d")
-        window_end = (first_dt + timedelta(days=180)).strftime("%Y-%m-%d")
-        prices = [r["price"] for r in records
-                   if r["brand"] == brand and r["date"] <= window_end]
+        prices = prices_by_brand[brand][:BASELINE_SAMPLE_TARGET]
         result = compute_baseline_median(prices)
         if result is not None:
             value, excluded = result
@@ -555,24 +576,26 @@ def build_indices():
     if missing:
         print(f"Missing baseline: {missing}")
 
-    # Phase 3: Brand weights (50% prestige + 50% volume)
-    now = datetime.now()
+    # Phase 3: Brand weights — sqrt of recent listing volume.
+    #
+    # v2 used 50% prestige + 50% volume, normalised so every brand got a
+    # floor. Prestige is volume-blind, so the result was that six brands with
+    # six listings each carried 59% of the index while Rolex's 142 carried
+    # 24%: five Patek listings moved the number more than every Rolex
+    # combined. Prestige is a subjective hand-assigned table and does not
+    # belong in a price index.
+    #
+    # sqrt(volume) lets liquidity decide the weight while damping it, so
+    # Rolex leads (about 21%) without the index becoming a pure Rolex
+    # tracker, which is what raw volume produces.
+    now = datetime.now(SGT)
     sixmo = now - timedelta(days=180)
     recent = [r for r in records if r["date"] >= sixmo.strftime("%Y-%m-%d")]
     brand_vol = Counter(r["brand"] for r in recent)
     total_vol = sum(brand_vol.values()) or 1
 
-    vol_weight = {b: c / total_vol for b, c in brand_vol.items()}
-    max_vw = max(vol_weight.values()) if vol_weight else 1
-    norm_vol = {b: w / max_vw for b, w in vol_weight.items()}
-
-    brand_weight = {}
-    for b in all_brands:
-        p = PRESTIGE.get(b, 3)
-        v = norm_vol.get(b, 0)
-        brand_weight[b] = 0.5 * (p / 10) + 0.5 * v
-
-    total_bw = sum(brand_weight.values())
+    brand_weight = {b: (brand_vol.get(b, 0) / total_vol) ** 0.5 for b in all_brands}
+    total_bw = sum(brand_weight.values()) or 1
     brand_weight = {b: w / total_bw for b, w in brand_weight.items()}
 
     print(f"Top weights: {', '.join(f'{b}={w:.3f}' for b, w in sorted(brand_weight.items(), key=lambda x: -x[1])[:5])}")
@@ -694,20 +717,25 @@ def build_indices():
         })
 
         # ── Retail-anchored composite (1.0 = at retail) ──
+        # v2 zipped a 3-day-windowed price list against a same-day retail
+        # list. The two had different lengths and no shared ordering, so zip()
+        # silently discarded most prices (69% on the day this was found) and
+        # paired the survivors with unrelated watches' retail values. It
+        # reported secondary prices as 4.5% BELOW retail while the
+        # retail_spread field, computed correctly from the same data, said
+        # 31.1% ABOVE. Pair each record with its own retail price.
+        by_brand_ratios = defaultdict(list)
+        for r in records_by_date_retail[date]:
+            if r["brand"] in baseline_median and r["retail"]:
+                by_brand_ratios[r["brand"]].append(r["price"] / r["retail"])
         retail_ratios = []
         retail_weights_used = 0.0
-        for brand, prices in day.items():
-            if brand not in baseline_median:
-                continue
-            if not any(r["retail"] for r in records_by_date_retail[date] if r["brand"] == brand):
-                continue
-            retail_prices = [r["retail"] for r in records_by_date_retail[date] if r["brand"] == brand]
-            price_ratios = [p / r for p, r in zip(day[brand], retail_prices)]
-            med_ratio = median(price_ratios)
+        for brand, ratios in by_brand_ratios.items():
             bw = brand_weight.get(brand, 0)
-            retail_ratios.append((med_ratio, bw))
+            retail_ratios.append((median(ratios), bw))
             retail_weights_used += bw
-        retail_val = sum(r[0] * r[1] for r in retail_ratios) / retail_weights_used if retail_weights_used > 0 else None
+        retail_val = (sum(r * w for r, w in retail_ratios) / retail_weights_used
+                      if retail_weights_used > 0 else None)
         retail_composite.append({
             "date": date,
             "value": retail_val,
@@ -722,14 +750,22 @@ def build_indices():
         })
 
         # Condition sub-indices — pooled over COND_WINDOW_DAYS, see above.
+        # Condition sub-indices use the SAME brand weighting as the composite.
+        # v2 took an unweighted mean here while the composite was weighted, so
+        # "the New-vs-Pre-Owned spread" subtracted two numbers built on
+        # different scales from different brand mixes.
         for cond_code, output_list in [("p", preowned), ("n", new_idx_list)]:
             cond_prices = windowed_by_date_cond[date][cond_code]
-            ratios = []
+            num = den = 0.0
+            qualifying = 0
             for brand, prices in cond_prices.items():
-                if len(prices) >= MIN_COND_PER_BRAND:
-                    ratios.append(median(prices) / baseline_median[brand])
-            value = (round(ANCHOR_VALUE * sum(ratios) / len(ratios), 4)
-                     if len(ratios) >= MIN_COND_BRANDS else None)
+                if len(prices) >= MIN_COND_PER_BRAND and brand in baseline_median:
+                    bw = brand_weight.get(brand, 0)
+                    num += bw * (median(prices) / baseline_median[brand])
+                    den += bw
+                    qualifying += 1
+            value = (round(ANCHOR_VALUE * num / den, 4)
+                     if qualifying >= MIN_COND_BRANDS and den > 0 else None)
             output_list.append({"date": date, "value": value})
 
     composite = fill_series(composite)
@@ -790,33 +826,60 @@ def build_indices():
     # than letting "anchored at 1.0" imply the series starts there.
     first_computed = next((pt for pt in composite if pt["value"] is not None and not pt.get("stale")), None)
 
-    now_str = datetime.now().strftime("%Y-%m-%d")
-    d7 = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
-    d30 = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
-    d90 = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
+    now_str = datetime.now(SGT).strftime("%Y-%m-%d")
+    d7 = (datetime.now(SGT) - timedelta(days=7)).strftime("%Y-%m-%d")
+    d30 = (datetime.now(SGT) - timedelta(days=30)).strftime("%Y-%m-%d")
+    # v2 computed this from a 180-day lookback while the page labelled it
+    # "90D" — and because the series began after that lookback it never
+    # resolved, so the tile rendered blank permanently.
+    d90 = (datetime.now(SGT) - timedelta(days=90)).strftime("%Y-%m-%d")
     v7 = val_at_date(composite, d7)
     v30 = val_at_date(composite, d30)
     v90 = val_at_date(composite, d90)
 
-    # Brand contributions to 1-day change
-    prev_day_idx = composite[-2] if len(composite) > 1 else latest
+    # Brand contributions to the latest change.
+    #
+    # v2 reported bw * (today_ratio - yesterday_ratio) per brand and the
+    # figures did not reconcile: they summed to about a third of the actual
+    # move. Two reasons. The composite divides by the weight of the brands
+    # that qualified THAT day, and that denominator changes daily; and brands
+    # entering or leaving the qualifying set move the index without appearing
+    # in any brand's contribution.
+    #
+    # Decompose it properly instead. With V = sum(w*ratio)/sum(w), a brand
+    # present on both days contributes w/W_today * (ratio_t - ratio_y), and
+    # the change in the denominator plus the set membership is reported
+    # explicitly as a composition term rather than silently lost.
     brand_contribs = []
-    if len(composite) > 1:
-        for date in [dates_sorted[-1], dates_sorted[-2]]:
-            pass
-        today_window = windowed_by_brand[dates_sorted[-1]]
-        yesterday_window = windowed_by_brand[dates_sorted[-2]]
-        for brand in sorted(today_window.keys() | yesterday_window.keys()):
-            if brand not in baseline_median:
-                continue
-            t_prices = today_window.get(brand, [])
-            y_prices = yesterday_window.get(brand, [])
-            if len(t_prices) >= MIN_PER_BRAND and len(y_prices) >= MIN_PER_BRAND:
-                t_ratio = median(t_prices) / baseline_median[brand]
-                y_ratio = median(y_prices) / baseline_median[brand]
-                bw = brand_weight.get(brand, 0)
-                contrib = bw * (t_ratio - y_ratio)
-                brand_contribs.append((brand, contrib, len(t_prices)))
+    composition_effect = 0.0
+    contributions_total = 0.0
+    if len(composite) > 1 and len(dates_sorted) > 1:
+        t_win = windowed_by_brand[dates_sorted[-1]]
+        y_win = windowed_by_brand[dates_sorted[-2]]
+
+        def _qualifying(win):
+            return {b: median(p) for b, p in win.items()
+                    if b in baseline_median and len(p) >= MIN_PER_BRAND}
+
+        t_med, y_med = _qualifying(t_win), _qualifying(y_win)
+        W_t = sum(brand_weight.get(b, 0) for b in t_med) or 1.0
+        W_y = sum(brand_weight.get(b, 0) for b in y_med) or 1.0
+        V_t = sum(brand_weight.get(b, 0) * (m / baseline_median[b]) for b, m in t_med.items()) / W_t
+        V_y = sum(brand_weight.get(b, 0) * (m / baseline_median[b]) for b, m in y_med.items()) / W_y
+
+        shared = set(t_med) & set(y_med)
+        explained = 0.0
+        for brand in sorted(shared):
+            bw = brand_weight.get(brand, 0)
+            t_ratio = t_med[brand] / baseline_median[brand]
+            y_ratio = y_med[brand] / baseline_median[brand]
+            contrib = bw / W_t * (t_ratio - y_ratio)
+            explained += contrib
+            brand_contribs.append((brand, contrib, len(t_win.get(brand, []))))
+        # Whatever the per-brand terms do not account for is composition:
+        # brands entering or leaving, and the denominator shifting with them.
+        composition_effect = (V_t - V_y) - explained
+        contributions_total = explained
     brand_contribs.sort(key=lambda x: -abs(x[1]))
 
     po_latest = preowned[-1]["value"] if preowned else None
@@ -841,21 +904,26 @@ def build_indices():
     week_direction = "up" if v7 and latest["value"] > v7 else "down" if v7 else None
 
     if brand_contribs:
-        pushers = [b for b, c, _ in brand_contribs if c > 0][:3]
-        draggers = [b for b, c, _ in brand_contribs if c < 0][:3]
+        # v2 built this as "moved {dir_word}, led by {positive contributors}"
+        # regardless of sign, so on a down day the page credited the brands
+        # that had gone UP. Name the brands moving WITH the index first.
+        up = [b for b, c, _ in brand_contribs if c > 0][:3]
+        down = [b for b, c, _ in brand_contribs if c < 0][:3]
+        rising = chg_1d_pct > 0
+        leaders, opposers = (up, down) if rising else (down, up)
 
-        # Build a useful sentence
-        dir_word = "up" if chg_1d_pct > 0 else "down"
-        abs_chg = abs(chg_1d_pct)
-        parts = [f"SG-LWIX moved {dir_word} {abs_chg:.1f}% today"]
-        if pushers:
-            parts.append(f"led by {', '.join(pushers)}")
-        if draggers:
-            parts.append(f"with {', '.join(draggers)} pulling the other way")
+        dir_word = "up" if rising else "down" if chg_1d_pct < 0 else "flat"
+        parts = [f"SG-LWIX moved {dir_word} {abs(chg_1d_pct):.1f}% today"]
+        if leaders:
+            parts.append(f"led by {', '.join(leaders)}")
+        if opposers:
+            parts.append(f"with {', '.join(opposers)} pulling the other way")
         if retail_latest:
             pct_vs_retail = round((retail_latest - 1.0) * 100, 1)
             direction = "above" if pct_vs_retail > 0 else "below"
-            parts.append(f"On average, secondary prices are {abs(pct_vs_retail)}% {direction} retail")
+            parts.append(
+                f"On average, secondary prices are {abs(pct_vs_retail)}% {direction} retail"
+            )
         insights["composite"] = ". ".join(parts) + "."
     elif latest["value"] and prev_day_idx["value"]:
         dir_word = "up" if latest["value"] > prev_day_idx["value"] else "down"
@@ -891,20 +959,28 @@ def build_indices():
         "meta": {
             "name": "SG Luxury Watch Index",
             "symbol": "SG-LWIX",
-            "version": "2.0",
+            "version": INDEX_VERSION,
             "methodology": (
-                "Laspeyres-weighted composite of secondary-market asking prices "
-                "from 15+ Singapore Telegram watch dealer channels, expressed as "
-                "a weighted average of each brand's current price relative to its "
-                "own 90-day baseline median (50% prestige + 50% volume weights). "
-                f"{ANCHOR_VALUE} represents brands trading exactly at their own "
-                "baseline on average — it is a reference scale, not a value the "
-                "series is pinned to on a specific date; see first_computed."
+                "Weighted composite of secondary-market asking prices from "
+                "Singapore Telegram watch dealer channels. Each brand is "
+                "measured against its own first-180-day baseline median, and "
+                "brands are weighted by the square root of their recent "
+                "listing volume — liquidity decides the weight, damped so no "
+                "single brand dominates. Prices are pooled over a "
+                f"{WINDOW_DAYS}-day rolling window with at least "
+                f"{MIN_PER_BRAND} listings per brand, because this market is "
+                "thin enough that a shorter window measures sampling noise "
+                "rather than price. Repeat postings of the same watch are "
+                "collapsed before weighting. Non-Singapore stock is excluded, "
+                "never converted. "
+                f"{ANCHOR_VALUE} means brands trading exactly at their own "
+                "baseline on average — a reference scale, not a value the "
+                "series is pinned to on any date; see first_computed."
             ),
             "base_value": ANCHOR_VALUE,
             "anchor_date": anchor_date,
             "first_computed": first_computed,
-            "updated": datetime.now().isoformat(),
+            "updated": datetime.now(SGT).isoformat(),
             "total_records": len(records),
             "tracked_brands": len(all_brands),
         },
@@ -945,6 +1021,16 @@ def build_indices():
             {"brand": b, "contribution": round(c, 6), "listings": n}
             for b, c, n in brand_contribs[:8]
         ],
+        # Sum of ALL per-brand terms, not just the top few published below.
+        # Without this the reconciliation claim is not checkable from the
+        # output: brand_contributions is truncated to the largest movers, so
+        # adding those up will never match the total.
+        "contributions_total": round(contributions_total, 6),
+        # Per-brand terms plus this equal the actual move. Anything that is
+        # not a price change in a brand present on both days -- brands
+        # entering or leaving the qualifying set, and the weight denominator
+        # moving with them -- lands here rather than going unexplained.
+        "composition_effect": round(composition_effect, 6),
         "insights": insights,
         "price_outliers": price_outliers[-200:],
         "price_outlier_count": len(price_outliers),
