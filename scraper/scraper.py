@@ -30,7 +30,12 @@ CHANNELS = [
     {"handle": "watchexchangesg",     "name": "Watch Exchange SG",     "subs": 15000},
     {"handle": "pngwatchdealer",      "name": "PNG Watch Dealer",      "subs": 3000},
     {"handle": "watchbooksg",         "name": "Watch Book SG",         "subs": 4000},
-    {"handle": "schonwatch",          "name": "Schon Watch",           "subs": 4000},
+    # schonwatch removed 2026-08-03: a Malaysian dealer. 270 of its 274
+    # listings carry an MY signal (ringgit prices, 🇲🇾) and the other 4 are
+    # ads. Per-listing filtering is the wrong tool for a wholly-MY channel.
+    # sgwatchinsider (silent since 2026-01-01) and goldmanluxurysg (since
+    # 2025-08-10) are dead; kept scraping is harmless but they contribute
+    # nothing new.
     {"handle": "watchcapital",        "name": "Watch Capital",         "subs": 1500},
     {"handle": "goldmanluxurysg",     "name": "Goldman Luxury SG",     "subs": 1000},
     {"handle": "thefinesttime",       "name": "The Finest Time",       "subs": 8561},

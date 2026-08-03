@@ -1,42 +1,65 @@
 #!/usr/bin/env python3
 """Filter pipeline - determine if a Telegram message is a genuine watch listing."""
 import re
+import unicodedata
 
 try:
     from brands import match_brand as _match_brand
 except ImportError:
     from parser.brands import match_brand as _match_brand
 
-# --- CURRENCY CONVERSION ---
-CURRENCY_RATES = {
-    "USD": 1.35,   # 1 USD ≈ 1.35 SGD
-    "EUR": 1.47,   # 1 EUR ≈ 1.47 SGD
-    "HKD": 0.173,  # 1 HKD ≈ 0.173 SGD
-    "MYR": 0.29,   # 1 MYR ≈ 0.29 SGD
-}
-
-CURRENCY_PATTERNS = [
-    (re.compile(r'\b(?:USD?|US)\s*\$', re.I), "USD"),
-    (re.compile(r'\b(?:HKD?|HK)\s*\$', re.I), "HKD"),
-    (re.compile(r'€|\bEUR\b', re.I), "EUR"),
-    (re.compile(r'\b(?:MYR|RM)\b', re.I), "MYR"),
-    (re.compile(r'\bUSD\b', re.I), "USD"),
-    (re.compile(r'\bHKD\b', re.I), "HKD"),
-    (re.compile(r'\bEUR\b', re.I), "EUR"),
-    (re.compile(r'\bMYR\b', re.I), "MYR"),
+# --- NON-SINGAPORE EXCLUSION ---
+# This index prices the SINGAPORE secondary market. Foreign stock used to be
+# converted into SGD at hardcoded rates and folded in, which put Malaysian
+# inventory into a Singapore index. Measured across the corpus: 6,007 SGD /
+# 12 MYR / 0 USD / 0 HKD / 0 EUR — the entire conversion subsystem existed to
+# launder ~282 Malaysian listings (4.7%) into the number. Conversion is gone;
+# anything not buyable in Singapore is excluded outright, never converted.
+MY_SIGNALS = [
+    re.compile(r'\bRM\s*\$?\s*\d', re.I),        # RM53,800 — ringgit price
+    re.compile(r'\bMYR\b', re.I),
+    re.compile(r'\b(malaysia|malaysian|johor|kuala\s*lumpur|penang)\b', re.I),
 ]
+MY_FLAG = "\U0001F1F2\U0001F1FE"  # 🇲🇾
 
-def detect_currency(text):
-    """Detect if a listing is priced in a non-SGD currency. Returns currency code or None."""
+# Other non-SGD currencies. None appear in the corpus today, but a listing
+# priced in them is by definition not Singapore stock, so exclude rather than
+# convert if one ever shows up.
+FOREIGN_CURRENCY = re.compile(
+    r'(?:\b(?:USD|HKD|EUR|GBP|AUD|THB|IDR|PHP)\b|\bUS\s*\$|\bHK\s*\$|€|£)', re.I
+)
+
+
+def is_singapore_market(text):
+    """False when a listing is not buyable in Singapore.
+
+    Applied as a hard gate in classify(), so non-SG stock never becomes a
+    listing at all -- it does not reach the index, the API or the page.
+    """
     if not text:
-        return None
-    # First check for explicit "All Prices are in Singapore Dollars" override
-    if re.search(r'(?i)all prices are in singapore dollars', text):
-        return None
-    for pat, code in CURRENCY_PATTERNS:
-        if pat.search(text):
-            return code
-    return None
+        return True
+    t = unicodedata.normalize("NFKC", text)
+    if MY_FLAG in text:
+        return False
+    for pat in MY_SIGNALS:
+        if pat.search(t):
+            return False
+    if FOREIGN_CURRENCY.search(t):
+        return False
+    return True
+
+
+# Prices deliberately masked by the dealer: "RM14x,800", "$13x,800". These
+# used to parse into implausible values (the visible digits only) rather than
+# being rejected. 136 listings in the corpus do this.
+# A price stated as a label followed by a bare number, possibly with emoji or
+# newlines in between: "Priced at\n💲\n22300". Anchored on the word so a bare
+# 6-digit reference number ("Model : 126331") can never be mistaken for one.
+LABELLED_BARE_PRICE = re.compile(
+    r'(?i)\bprice[ds]?\b\s*(?:at|:|-)?[\s\S]{0,12}?(\d{4,6})(?!\d)'
+)
+
+MASKED_PRICE = re.compile(r'(?:SGD?|USD|RM|MYR|\$|S\$)\s*\d+x{1,3}[\d,]*', re.I)
 
 # --- EMOJI DIGIT DECODER ---
 EMOJI_DIGITS = {
@@ -44,16 +67,22 @@ EMOJI_DIGITS = {
     '5': '5', '6': '6', '7': '7', '8': '8', '9': '9',
 }
 
+def normalize_currency_emoji(text):
+    """Treat the 💲 emoji as a dollar sign. HengWatch and others use it as the
+    only currency marker, on its own line above a bare number."""
+    return (text or "").replace("\U0001F4B2", "$")
+
+
 def decode_emoji_digits(text):
     """Convert emoji keycap digits (0U+FE0F+U+20E3) to plain digits."""
-    # Match: digit followed by variation selector U+FE0F then enclosing keycap U+20E3
-    pat = re.compile(r'([0-9])\xef\xb8\x8f\xe2\x83\xa3')
+    # The pattern used UTF-8 BYTE escapes inside a str regex, so it matched
+    # the characters U+00EF U+00B8 U+008F rather than the real keycap
+    # sequence and never fired. U+FE0F is optional in the wild.
+    pat = re.compile('([0-9])\ufe0f?\u20e3')
     return pat.sub(lambda m: m.group(1), text)
 
 # --- NOISE PATTERNS ---
 NOISE_PATTERNS = [
-    # Financing / installment spam
-    r'(?i)(only\s+SGD?\$?\d+[/\s]*month|per\s+month|36\s*months?\s+via\s+DBS|POSB\s+credit\s+card|interest\s*free!\s*$|installment\s+plan)',
     # Giveaway / contest
     r'(?i)(giveaway|give\s*away|win\s+(a|this)\s+\w+\s+watch|going\s+to\s+one\s+lucky|competition|contest\s+alert)',
     # Pure promotion (no specific listing)
@@ -66,8 +95,6 @@ NOISE_PATTERNS = [
     r'(?i)\b(pinned.*message|deleted message|opening hours|operating hours|shop base)\b',
     # Dealer update broadcasts (not individual listings)
     r'(?i)^(?:[📢🕘⏰🔄\s]*(?:watch\s+district\s+update|daily\s+update|weekly\s+update|stock\s+update|new\s+arrivals?\s+update)[\s!📢🕘⏰]*)$',
-    # Link aggregator posts (linktree, carousell pages, store links with no watch)
-    r'(?i)(?:watchdistrict\.store|linktree|carousell|carousell\.app)\b',
     # Service / repair
     r'(?i)\b(service centre|warranty registration|repair service|servicing special)\b',
     # Accessories with no watch (matches "cufflink(s)"/"cuff links" — was
@@ -123,7 +150,7 @@ def has_watch_terms(text):
 def has_price(text):
     if not text:
         return False
-    clean = text.replace('\n', ' ').replace('|', ' ')
+    clean = normalize_currency_emoji(text).replace('\n', ' ').replace('|', ' ')
     # Check for real prices first (SGD and foreign currencies)
     has_real = False
     if re.search(r'(?:SGD? *\$|S\$ ?|USD? *\$|US *\$|HKD? *\$|HK *\$|MYR|RM *\$?)', clean, re.I):
@@ -135,6 +162,9 @@ def has_price(text):
     elif re.search(r'Price[:\s]+\$?[\d,]+', clean, re.I):
         has_real = True
     elif re.search(r'(?:sgd|usd|hkd|myr)\s*[\d,]+', clean, re.I):
+        has_real = True
+    elif LABELLED_BARE_PRICE.search(clean):
+        # "Priced at 22300" — no symbol, no comma. Whole channels post this way.
         has_real = True
     # Reject if ONLY installment/monthly pricing
     if has_real:
@@ -178,6 +208,28 @@ def _has_watch_anatomy(t, require_two_signals):
     return signal_count >= 2
 
 
+# Two noise rules were killing the whole message when only ONE LINE was
+# noise, and the collateral damage was enormous: HengWatch posts perfectly
+# structured listings (Model / Condition / Year / Case size) and appends an
+# "Installment Plan" line -- 2,097 of its 2,100 messages were discarded on
+# that alone. watchdistrictsg links to its own shop in most posts; 422 real
+# listings died the same way. Strip these lines, then judge what remains.
+LINE_NOISE = [
+    re.compile(r'(?i)(only\s+SGD?\$?\d+[/\s]*month|per\s+month|/\s*month'
+               r'|instal?lments?|interest\s*free|payment\s+plan'
+               r'|\d+\s*months?\s+via\s+\w+'
+               r'|\b(?:DBS|POSB|OCBC|UOB|HSBC|Maybank|Citibank|Standard\s+Chartered)\b)'),
+    re.compile(r'(?i)(watchdistrict\.store|linktree|carousell(?:\.app)?)'),
+]
+
+
+def strip_noise_lines(text):
+    """Drop lines that are noise in themselves, keep the rest of the post."""
+    kept = [ln for ln in (text or "").split("\n")
+            if not any(p.search(ln) for p in LINE_NOISE)]
+    return "\n".join(kept)
+
+
 def classify(text):
     """Main filter. Returns (passed: bool, reason: str|None) — reason is None
     when passed, otherwise a short code identifying which check rejected it."""
@@ -188,6 +240,16 @@ def classify(text):
 
     # Decode emoji digits first
     t = decode_emoji_digits(t)
+
+    # 0. Singapore-only. Hard gate: non-SG stock never becomes a listing.
+    if not is_singapore_market(t):
+        return False, "not_singapore"
+
+    # Drop noise LINES before judging the message, so one financing or
+    # shop-link line cannot discard an otherwise-real listing.
+    t = strip_noise_lines(t)
+    if not t.strip():
+        return False, "empty_after_noise_strip"
 
     # 1. Noise patterns
     for pat in NOISE_PATTERNS:
@@ -214,16 +276,23 @@ def is_watch_listing(text):
     """Main filter: returns True if this is likely a genuine watch listing."""
     return classify(text)[0]
 
-def extract_price(text, convert_to_sgd=True):
-    """Extract price from listing text. Returns int or None.
-    Handles: SGD $17,950, $16.8k, 16,800/- etc.
-    Also handles emoji-encoded digits.
-    If convert_to_sgd=True and a non-SGD currency is detected, converts to SGD."""
+def extract_price(text):
+    """Extract the asking price in SGD. Returns int or None.
+
+    Handles SGD $17,950, $16.8k, 16,800/- and emoji-encoded digits. There is
+    deliberately no currency conversion: a non-SGD listing is not Singapore
+    stock and is excluded upstream by is_singapore_market(), never converted.
+    """
     if not text:
         return None
     
     # Decode emoji digits first
-    clean = decode_emoji_digits(text)
+    # Strip noise LINES first, exactly as classify() does. Without this a
+    # dealer who appends an "Installment Plans" line to every post has the
+    # whole message rejected below, price and all — which is what silenced
+    # HengWatch's 2,100 listings.
+    clean = decode_emoji_digits(normalize_currency_emoji(strip_noise_lines(text)))
+    raw_multiline = clean            # keep newlines for the labelled-bare match
     clean = clean.replace('\n', ' ').replace('\\n', ' ')
     
     # ── Strip retail-price references (keeps listings from capturing MSRP instead of asking price) ──
@@ -237,11 +306,13 @@ def extract_price(text, convert_to_sgd=True):
     )
     clean = retail_strip.sub(' ', clean)
     
-    # Detect currency
-    detected_currency = detect_currency(clean) if convert_to_sgd else None
-    
+    # A masked price ("RM14x,800", "$13x,800") is unusable: the visible digits
+    # are not the price. Reject rather than parse a wrong number from it.
+    if MASKED_PRICE.search(clean):
+        return None
+
     # Reject if it's an installment plan
-    if re.search(r'(?i)(per\s*month|/month|monthly|installment|36\s*month|DBS|POSB\s*credit)', clean):
+    if re.search(r'(?i)(per\s*month|/month|monthly|instal?lments?)', clean):
         return None
     if re.search(r'(?i)only\s+SGD?\$?\d+', clean):
         return None
@@ -277,11 +348,7 @@ def extract_price(text, convert_to_sgd=True):
             try:
                 num = float(val)
                 if 50 <= num <= 5000000:
-                    result = int(num)
-                    # Convert to SGD if foreign currency detected
-                    if detected_currency and detected_currency in CURRENCY_RATES:
-                        result = int(result * CURRENCY_RATES[detected_currency])
-                    return result
+                    return int(num)
             except:
                 continue
     
@@ -291,34 +358,48 @@ def extract_price(text, convert_to_sgd=True):
         try:
             num = float(m.group(1)) * 1000
             if 50 <= num <= 5000000:
-                result = int(num)
-                if detected_currency and detected_currency in CURRENCY_RATES:
-                    result = int(result * CURRENCY_RATES[detected_currency])
-                return result
+                return int(num)
         except:
             pass
     
+    # Labelled bare number: "Priced at\n💲\n22300"
+    m = LABELLED_BARE_PRICE.search(raw_multiline)
+    if m:
+        try:
+            num = float(m.group(1))
+            if 500 <= num <= 5000000:
+                return int(num)
+        except ValueError:
+            pass
+
     # Bare number followed by /- pattern: 16,800/-
     m = re.search(r'([\d,]{4,9})(?:\s*\/\-)', clean, re.I)
     if m:
         try:
             num = float(m.group(1).replace(',', ''))
             if 50 <= num <= 5000000:
-                result = int(num)
-                if detected_currency and detected_currency in CURRENCY_RATES:
-                    result = int(result * CURRENCY_RATES[detected_currency])
-                return result
+                return int(num)
         except:
             pass
     
     return None
 
+_COND_NEW = re.compile(r'(?i)\b(brand\s*new|bnib|nib|new\s+old\s+stock|nos|unworn|lnib)\b')
+# 'box.*papers' was written as a literal string inside a substring test, so it
+# could only ever match the characters "box.*papers" and never real text like
+# "box and papers". It is a regex now.
+_COND_USED = re.compile(
+    r'(?i)\b(pre[\s-]?owned|used|mint|full\s*set|complete\s*set'
+    r'|box\b[^\n]{0,20}\bpapers?|papers?\b[^\n]{0,20}\bbox)\b'
+)
+
+
 def extract_condition(text):
-    """Classify watch condition from text."""
-    t = (text or '').lower()
-    if any(w in t for w in ['brand new', 'bnib', 'nib', 'new old stock', 'nos', 'unworn']):
+    """Classify watch condition: 'n' brand new, 'p' pre-owned, 'u' unknown."""
+    t = unicodedata.normalize("NFKC", text or "")
+    if _COND_NEW.search(t):
         return 'n'
-    if any(w in t for w in ['pre-owned', 'preowned', 'used', 'mint', 'full set', 'box.*papers', 'complete set']):
+    if _COND_USED.search(t):
         return 'p'
     return 'u'
 
