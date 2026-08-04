@@ -64,6 +64,14 @@ MIN_PER_YEAR = 3
 MIN_SALES_PER_REF = 3
 MIN_REPOSTS_PER_REF = 5
 
+# Above this, a "fair range" stops describing one market. Rolex 124300 is the
+# worked example: the Oyster Perpetual 41 asks $9,900 to $32,900 because the
+# Celebration and Tiffany dials are a different watch wearing the same
+# reference number. Publishing a plus-or-minus 55% band as if it were a single
+# price would mislead exactly the reader this is built for, so the card carries
+# the warning with it rather than only tripping an ops alert.
+WIDE_SPREAD_PCT = 60.0
+
 
 def slugify(brand, ref):
     """A URL-safe identity for a reference.
@@ -215,6 +223,7 @@ def build_references():
             "fair_low": int(q1),
             "fair_high": int(q3),
             "spread_pct": round((q3 - q1) / med * 100, 1) if med else None,
+            "wide_spread": bool(med and (q3 - q1) / med * 100 > WIDE_SPREAD_PCT),
             "low": prices[0],
             "high": prices[-1],
             "first_seen": recs[0]["date"],
@@ -259,6 +268,7 @@ def build_references():
             "min_listings_per_month": MIN_PER_MONTH,
             "min_listings_per_year": MIN_PER_YEAR,
             "min_sales_to_publish_speed": MIN_SALES_PER_REF,
+            "wide_spread_pct": WIDE_SPREAD_PCT,
         },
         "caveat": (
             "These are asking prices from Singapore dealer channels, not "
@@ -272,6 +282,7 @@ def build_references():
         ),
         "coverage": {
             "references_published": len(references),
+            "wide_spread": sum(1 for c in references if c["wide_spread"]),
             "full_confidence": len(full),
             "limited_confidence": len(references) - len(full),
             "listings_with_a_reference": with_ref,
