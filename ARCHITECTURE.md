@@ -10,24 +10,41 @@ retired copy of it that looks live but is not.
   visitor
     │
     ▼
-  https://www.0xsteamboat.me/watches
+  https://www.0xsteamboat.me/watches          ← reference grid + search
+  https://www.0xsteamboat.me/watches/<slug>   ← one reference, e.g. rolex-126334
     │   Vite + Bun app — repo: chintheman/0xsteamboat-me (PRIVATE)
     │   on this box at /home/workspace/0xsteamboat-me
-    │   page source: src/pages/watches.tsx     ← THE REAL PAGE
+    │   page source: src/pages/watches.tsx, src/pages/watch-ref.tsx
+    │                src/components/watch.tsx   (shared card pieces)
     │   runs as a Zo service (see zosite.json)
     ▼
-  GET /api/watch-listings
-    │   proxied by 0xsteamboat-me/server.ts (line ~293)
+  GET /api/watch-references     ← THE PRODUCT
+  GET /api/watch-listings       ← secondary; the page survives without it
+    │   proxied by 0xsteamboat-me/server.ts (~line 293)
+    │   query params ARE forwarded on the references proxy: /watches/<slug>
+    │   resolves via ?slug= on a cold load
     ▼
-  https://0xsteamboat.zo.space/api/watch-listings
-    │   Zo space route — source of truth: web/routes/api-watch-listings.ts (THIS REPO)
+  https://0xsteamboat.zo.space/api/watch-{references,listings}
+    │   Zo space routes — source of truth: web/routes/*.ts (THIS REPO)
     │   deployed by hand; Zo has no deploy API
     ▼
   /home/workspace/projects/sg-luxury-watch-index/data/
-    ├── index.json      ← written by index/index_engine.py
-    └── listings.json   ← written by index/export_pipeline.py
-        both refreshed by pipeline.py, twice daily (see ops/cron.md)
+    ├── references.json ← written by index/references.py     (price cards)
+    ├── index.json      ← written by index/index_engine.py   (the composite)
+    └── listings.json   ← written by index/export_pipeline.py (14-day live feed)
+        all refreshed by pipeline.py, twice daily (see ops/cron.md)
 ```
+
+**What the page is.** It answers "what's it worth / am I being ripped off" for
+one reference, not "is the market moving". The composite index still computes
+and still ships, but it is one context line — it blends a $13,500 Datejust
+with a $62,000 Daytona, so it describes no watch anyone is actually buying.
+
+**Where history lives.** `listings.json` is a 14-day live snapshot
+(`max_age_days=14` in `export_pipeline.py`). Anything historical must read
+`data/listings.db` directly, as `index/signals.py` and `index/references.py`
+do. Both share one corpus parse via `signals.load_rows` / `parse_listings` so
+the definition of "a listing" cannot drift between them.
 
 ## Traps
 
@@ -45,9 +62,15 @@ already did once: the copy in `0xsteamboat-me-docs/zo-space/routes/` is a
 stale 2026-07-24 reconstruction missing `brandSubindices` and
 `computeBrand1dChange` entirely. Do not trust that directory.
 
-**The page has no fallback.** `watches.tsx` does
-`.catch(e => setError(e.message))`. Any field the API stops returning becomes
-an error state for real visitors. There is no cached copy and no degraded
+**A reference is identified by brand AND number.** Slugs are brand-prefixed
+(`rolex-126334`) because bare references collide — 9 reference tokens in this
+corpus are claimed by more than one brand. `check_contract.ts` asserts slug
+uniqueness for exactly this reason.
+
+**The pages have no fallback.** `watches.tsx` does
+`.catch(e => setError(e.message))` on the references fetch. Any field that API
+stops returning becomes an error state for real visitors. (The listings fetch
+is caught silently — it is secondary.) There is no cached copy and no degraded
 mode.
 
 ## The two guards
