@@ -73,6 +73,41 @@ MIN_REPOSTS_PER_REF = 5
 WIDE_SPREAD_PCT = 60.0
 
 
+# ── Reference families ─────────────────────────────────────────────
+# Rolex encodes the variant in a suffix (126710BLNR) and the base number is
+# already the unit people shop for, so it needs nothing here. Several other
+# brands put the whole specification in the reference, which fragments them
+# into groups of two and three:
+#
+#   Audemars Piguet  15510ST.OO.1320ST.06   model.case / bracelet / dial
+#   Omega            310.32.42.50.02.001    case+movement / dial / bracelet
+#   Hublot           411.NM.1170.RX         model / metal / dial / strap
+#
+# Truncating to the part that actually drives price (model plus case metal)
+# turns 118 unusable AP references into a handful of real ones. Verified
+# against the corpus: 26240OR (rose gold chrono) and 26240ST (steel) separate
+# correctly at $95,300 and $73,900 medians, which is the distinction a buyer
+# cares about.
+#
+# Cartier, Patek and Panerai are deliberately absent: their references have no
+# variant structure to strip (WSSA0062, 5711, PAM01312), so they stay thin
+# until volume arrives. There is no parser fix for those.
+REF_FAMILIES = {
+    "Audemars Piguet": lambda r: r.split(".")[0] if "." in r else None,
+    "Omega": lambda r: ".".join(r.split(".")[:4]) if r.count(".") >= 4 else None,
+    "Hublot": lambda r: ".".join(r.split(".")[:2]) if r.count(".") >= 2 else None,
+}
+
+
+def ref_family(brand, ref):
+    """A coarser reference that still names one buyable thing, or None."""
+    fn = REF_FAMILIES.get(brand)
+    if not fn or not ref:
+        return None
+    fam = fn(ref)
+    return fam if fam and fam != ref else None
+
+
 def slugify(brand, ref):
     """A URL-safe identity for a reference.
 
@@ -105,7 +140,10 @@ def build_references():
     recent_cutoff = (today - timedelta(days=RECENT_DAYS)).isoformat()
 
     # ── Group the corpus by reference ──
-    by_ref = defaultdict(list)
+    # Two passes, mirroring index_engine._unit(): a listing lands in the most
+    # specific group that can actually be published, so nothing is counted in
+    # two cards.
+    priced = []
     with_ref = 0
     for L in listings.values():
         if not L.get("ref"):
@@ -114,7 +152,21 @@ def build_references():
         if is_junk_ref(L["ref"]):
             continue
         with_ref += 1
-        by_ref[(L["brand"], L["ref"])].append(L)
+        priced.append(L)
+
+    recent_by_exact = Counter(
+        (L["brand"], L["ref"]) for L in priced if L["date"] >= recent_cutoff
+    )
+    by_ref = defaultdict(list)
+    family_variants = defaultdict(set)
+    for L in priced:
+        exact = (L["brand"], L["ref"])
+        fam = ref_family(L["brand"], L["ref"])
+        if fam and recent_by_exact[exact] < MIN_RECENT_LIMITED:
+            by_ref[(L["brand"], fam)].append(L)
+            family_variants[(L["brand"], fam)].add(L["ref"])
+        else:
+            by_ref[exact].append(L)
 
     # ── Confirmed sales per reference, from dealer SOLD replies ──
     sales_by_ref = defaultdict(list)
@@ -164,6 +216,7 @@ def build_references():
 
     references = []
     rejected_thin = 0
+    rejected_incoherent = 0
     for (brand, ref), recs in by_ref.items():
         recs.sort(key=lambda r: r["date"])
         recent = [r for r in recs if r["date"] >= recent_cutoff]
@@ -210,10 +263,16 @@ def build_references():
         sales = sales_by_ref.get(key, [])
         cuts = cuts_by_ref.get(key, [])
 
+        variants = family_variants.get((brand, ref), set())
         card = {
             "slug": slugify(brand, ref),
             "brand": brand,
             "ref": ref,
+            # "family" means this covers several full references that differ by
+            # dial or bracelet. Saying so matters: the reader must not read it
+            # as a quote for one exact configuration.
+            "grain": "family" if variants else "reference",
+            "variants": len(variants),
             "model": model["value"] if model else None,
             "confidence": "full" if len(recent) >= MIN_RECENT_FULL else "limited",
             "n_recent": len(recent),
@@ -243,6 +302,18 @@ def build_references():
             } if reposts_by_ref[key] >= MIN_REPOSTS_PER_REF else None),
         }
 
+        # ── A family must actually describe one thing ──
+        # When an exact reference clears the bar it takes its own card, which
+        # leaves the family holding only the leftovers — and those can be
+        # wildly heterogeneous. Hublot 542.NX came out spanning $6,350 to
+        # $19,900 that way. On a real reference a spread that wide is a fact
+        # about the market (see WIDE_SPREAD_PCT); on a family it just means the
+        # grouping is wrong, so the card is dropped rather than shown with a
+        # caveat that cannot rescue it.
+        if card["grain"] == "family" and card["wide_spread"]:
+            rejected_incoherent += 1
+            continue
+
         # ── Invariants. A broken card is worse than a missing one. ──
         assert card["brand"] and card["ref"], f"nameless card: {card}"
         assert card["fair_low"] <= card["median"] <= card["fair_high"], \
@@ -269,6 +340,7 @@ def build_references():
             "min_listings_per_year": MIN_PER_YEAR,
             "min_sales_to_publish_speed": MIN_SALES_PER_REF,
             "wide_spread_pct": WIDE_SPREAD_PCT,
+            "family_grouped_brands": sorted(REF_FAMILIES),
         },
         "caveat": (
             "These are asking prices from Singapore dealer channels, not "
@@ -277,16 +349,20 @@ def build_references():
             "current asking prices fall inside it. Coverage is concentrated: "
             "Rolex dominates because its listings cluster on a few references, "
             "while brands of similar volume spread across many and never reach "
-            "a publishable sample. Specifications are the most common value "
-            "across listings, not a verified catalogue spec."
+            "a publishable sample. Where a brand encodes dial and bracelet in "
+            "the reference itself (Audemars Piguet, Omega, Hublot), close "
+            "variants are grouped and the card says so. Specifications are the "
+            "most common value across listings, not a verified catalogue spec."
         ),
         "coverage": {
             "references_published": len(references),
+            "families": sum(1 for c in references if c["grain"] == "family"),
             "wide_spread": sum(1 for c in references if c["wide_spread"]),
             "full_confidence": len(full),
             "limited_confidence": len(references) - len(full),
             "listings_with_a_reference": with_ref,
             "references_too_thin_to_publish": rejected_thin,
+            "families_dropped_as_incoherent": rejected_incoherent,
             "by_brand": dict(by_brand.most_common()),
         },
         "references": references,
@@ -295,9 +371,11 @@ def build_references():
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(out, indent=2, default=str))
 
+    fams = sum(1 for c in references if c["grain"] == "family")
     print(f"References: {len(references)} published "
-          f"({len(full)} full confidence, {len(references) - len(full)} limited) "
-          f"across {len(by_brand)} brand(s); {rejected_thin} too thin")
+          f"({len(full)} full confidence, {len(references) - len(full)} limited, "
+          f"{fams} variant-grouped) across {len(by_brand)} brand(s); "
+          f"{rejected_thin} too thin, {rejected_incoherent} family group(s) too broad")
     top = references[0] if references else None
     if top:
         print(f"  deepest: {top['brand']} {top['ref']} n={top['n_recent']} "

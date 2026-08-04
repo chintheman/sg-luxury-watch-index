@@ -150,6 +150,7 @@ const REQUIRED_REF = [
   "slug", "brand", "ref", "confidence", "n_recent", "n_total", "window_days",
   "median", "fair_low", "fair_high", "low", "high", "days_since_last_seen",
   "channels", "monthly", "by_year", "specs", "sales_observed", "wide_spread",
+  "grain", "variants",
 ];
 const cards = (refs.references ?? []).slice(0, 50);
 if (cards.length === 0) {
