@@ -54,7 +54,8 @@ def _days(a, b):
         return None
 
 
-def build_signals():
+def load_rows():
+    """Every raw message, read-only. The full corpus, not the 14-day window."""
     conn = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     rows = list(conn.execute(
@@ -62,9 +63,17 @@ def build_signals():
         "       reply_to_message_id FROM raw_messages"
     ))
     conn.close()
-    by_id = {(r["channel_handle"], r["message_id"]): r for r in rows}
+    return rows
 
-    # ── Parse the listing universe once ──
+
+def parse_listings(rows, with_attributes=False):
+    """Rows -> the priced-watch-listing universe, keyed by (channel, message_id).
+
+    Shared by signals.py and references.py so the definition of "a listing"
+    cannot drift between the two. `with_attributes` adds the full extracted
+    attribute dict, which the reference aggregator needs for consensus specs
+    and signals.py does not.
+    """
     listings = {}
     for r in rows:
         t = r["message_text"] or ""
@@ -75,13 +84,35 @@ def build_signals():
         if not brand or not price or not (500 <= price <= 500000):
             continue
         model, ref = extract_model(t, brand)
-        listings[(r["channel_handle"], r["message_id"])] = {
+        attrs = extract_attributes(t)
+        rec = {
             "id": f"{r['channel_handle']}-{r['message_id']}",
             "channel": r["channel_handle"], "brand": brand, "price": price,
             "date": (r["posted_at"] or "")[:10], "posted_at": r["posted_at"],
             "ref": ref, "model": model, "views": r["views"],
-            "stock_code": extract_attributes(t).get("stock_code"),
+            "stock_code": attrs.get("stock_code"),
         }
+        if with_attributes:
+            rec["attrs"] = attrs
+        listings[(r["channel_handle"], r["message_id"])] = rec
+    return listings
+
+
+def dist(vals):
+    """n / median / p25 / p75 over a list of numbers, or None if empty."""
+    if not vals:
+        return None
+    vals = sorted(vals)
+    return {
+        "n": len(vals), "median": vals[len(vals) // 2],
+        "p25": vals[len(vals) // 4], "p75": vals[3 * len(vals) // 4],
+    }
+
+
+def build_signals():
+    rows = load_rows()
+    by_id = {(r["channel_handle"], r["message_id"]): r for r in rows}
+    listings = parse_listings(rows)
 
     # ── Time to sell, from dealer-authored reply links ──
     sold = []
@@ -110,14 +141,7 @@ def build_signals():
             continue
         sold.append({**L, "days_to_sell": d})
 
-    def _dist(vals):
-        if not vals:
-            return None
-        vals = sorted(vals)
-        return {
-            "n": len(vals), "median": vals[len(vals) // 2],
-            "p25": vals[len(vals) // 4], "p75": vals[3 * len(vals) // 4],
-        }
+    _dist = dist
 
     by_brand_speed = {}
     grouped = defaultdict(list)

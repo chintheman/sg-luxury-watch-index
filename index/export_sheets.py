@@ -15,6 +15,8 @@ Files:
   brand_summary.csv   per-brand rollup: volume, price levels, speed, attention
   sold.csv            confirmed sales with days-to-sell
   price_changes.csv   watches whose asking price moved while listed
+  references.csv      per-reference fair asking range and sample size
+  reference_history.csv  monthly median asking price per reference
   README.md           what each column means and what not to trust
 """
 import csv
@@ -50,6 +52,7 @@ def export():
     listings = _load("listings.json") or []
     index = _load("index.json") or {}
     signals = _load("signals.json") or {}
+    refs = _load("references.json") or {}
     removed = _load("removed.json") or {}
     written = {}
 
@@ -154,6 +157,47 @@ def export():
         ["brand", "model", "reference", "channel", "first_price", "last_price",
          "change_pct", "days_on_market", "times_listed"], rows)
 
+    # ── references.csv ──
+    cards = refs.get("references") or []
+    rows = []
+    for c in cards:
+        specs = c.get("specs") or {}
+        def spec(name):
+            s = specs.get(name)
+            return s["value"] if s else None
+        tts = c.get("time_to_sell") or {}
+        cuts = c.get("price_cuts") or {}
+        rows.append([
+            c.get("slug"), c.get("brand"), c.get("ref"), c.get("model"),
+            c.get("confidence"), c.get("n_recent"), c.get("n_total"),
+            c.get("fair_low"), c.get("median"), c.get("fair_high"),
+            c.get("spread_pct"), c.get("low"), c.get("high"),
+            c.get("first_seen"), c.get("last_seen"), c.get("days_since_last_seen"),
+            c.get("channels"), spec("case_size_mm"), spec("case_material"),
+            spec("bracelet"), spec("dial_colour"), spec("box_papers"),
+            tts.get("median"), c.get("sales_observed"),
+            cuts.get("cut"), cuts.get("median_cut_pct"), cuts.get("median_days_listed"),
+        ])
+    written["references.csv"] = _write(
+        "references.csv",
+        ["slug", "brand", "reference", "model", "confidence", "n_recent",
+         "n_total", "fair_low", "median_asking", "fair_high", "spread_pct",
+         "lowest", "highest", "first_seen", "last_seen", "days_since_last_seen",
+         "channels", "case_size_mm", "case_material", "bracelet", "dial_colour",
+         "box_papers", "median_days_to_sell", "sales_observed", "price_cuts",
+         "median_cut_pct", "median_days_listed"], rows)
+
+    # ── reference_history.csv ── long format, one row per reference-month
+    rows = []
+    for c in cards:
+        for m in c.get("monthly") or []:
+            rows.append([c.get("slug"), c.get("brand"), c.get("ref"),
+                         c.get("model"), m["month"], m["median"], m["n"]])
+    written["reference_history.csv"] = _write(
+        "reference_history.csv",
+        ["slug", "brand", "reference", "model", "month", "median_asking",
+         "listings"], rows)
+
     _write_readme(index, signals, written)
     print("Sheets: " + ", ".join(f"{k} ({v})" for k, v in written.items())
           + f" -> {OUT_DIR}")
@@ -176,6 +220,8 @@ version {index.get('meta', {}).get('version', '?')}.
 | `brand_summary.csv` | {written.get('brand_summary.csv', 0)} | per-brand rollup — the best sheet to start from |
 | `price_changes.csv` | {written.get('price_changes.csv', 0)} | watches whose asking price moved while listed |
 | `sold.csv` | {written.get('sold.csv', 0)} | listings confirmed sold this run |
+| `references.csv` | {written.get('references.csv', 0)} | per-reference fair asking range — the price-card data |
+| `reference_history.csv` | {written.get('reference_history.csv', 0)} | monthly median asking price per reference |
 
 ## Read these before drawing conclusions
 
@@ -202,6 +248,19 @@ not that the watch has no box.
 **`times_listed` above 1 means the same watch was posted repeatedly.** Those
 rows are already collapsed to one; the raw feed is about 78% larger than the
 real number of watches.
+
+**`fair_low`/`fair_high` in references.csv is an interquartile range** over the
+last 90 days: half of current asking prices sit inside it. Always read it next
+to `n_recent`. Rows marked `confidence = limited` have 10-19 listings behind
+them, which is enough to be indicative and not enough to be authoritative.
+
+**Specifications in references.csv are the most common value across listings,**
+not a verified catalogue spec. Where dealers describe a watch inconsistently
+the majority wins, so treat them as a strong hint rather than a fact.
+
+**`reference_history.csv` suppresses months with fewer than 3 listings.** A
+monthly median built on one listing is one dealer's asking price drawn as a
+market level, so those months are absent rather than plotted.
 """)
 
 

@@ -2,7 +2,8 @@
 """
 SG Luxury Watch Index — Full Pipeline
 =====================================
-Runs scraper → export listings → recalculate index → anomaly check.
+Runs scraper → export listings → recalculate index → signals → reference
+aggregates → sheets → anomaly check.
 Called twice daily by automation (ae2776ca), which reads this script's
 stdout to compose the Telegram summary sent to @steamboat0x0 — there's no
 direct Telegram integration here, so anomaly signals are surfaced by
@@ -95,6 +96,38 @@ def check_anomalies():
               f"{tts.get('median', '-')}d), {pm.get('price_cuts', 0)} price cuts, "
               f"inventory looks {inv.get('apparent_inflation_pct', 0)}% deeper than it is")
 
+    refs_path = ROOT / "data" / "references.json"
+    if refs_path.exists():
+        refs = json.loads(refs_path.read_text())
+        cov = refs.get("coverage", {})
+        cards = refs.get("references", [])
+        print(f"  References: {cov.get('references_published', 0)} published "
+              f"({cov.get('full_confidence', 0)} full confidence), "
+              f"{cov.get('references_too_thin_to_publish', 0)} too thin")
+        if not cards:
+            flags.append(
+                "Reference aggregation published nothing. Every price card on "
+                "the page comes from this file, so an empty run means the page "
+                "has no product on it."
+            )
+        # A fair range is a claim about the market; a wide one is a warning that
+        # the reference is really several different watches wearing one number.
+        wide = [c for c in cards
+                if c.get("spread_pct") is not None and c["spread_pct"] > 60]
+        if wide:
+            worst = max(wide, key=lambda c: c["spread_pct"])
+            flags.append(
+                f"{len(wide)} reference card(s) have an asking spread over 60% of "
+                f"median, widest {worst['slug']} at {worst['spread_pct']}% — that "
+                f"usually means one reference number covers several distinct watches."
+            )
+        stale = [c for c in cards if c.get("days_since_last_seen", 0) > 60]
+        if stale:
+            flags.append(
+                f"{len(stale)} reference card(s) have not been listed in over 60 "
+                f"days but still show a current fair price."
+            )
+
     index_path = ROOT / "data" / "index.json"
     if index_path.exists():
         index = json.loads(index_path.read_text())
@@ -171,10 +204,13 @@ def main():
     # Step 3: Derived market signals (time to sell, price movement, inventory)
     run_step("Signals", "python3 index/signals.py")
 
-    # Step 4: Export everything we track to CSVs for exploration
+    # Step 4: Per-reference price aggregates (the "what's it worth" layer)
+    run_step("References", "python3 index/references.py")
+
+    # Step 5: Export everything we track to CSVs for exploration
     run_step("Export sheets", "python3 index/export_sheets.py")
 
-    # Step 5: Surface data-quality anomalies for review
+    # Step 6: Surface data-quality anomalies for review
     check_anomalies()
 
     print("\n✅ Pipeline complete.")
