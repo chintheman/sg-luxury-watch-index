@@ -171,20 +171,47 @@ def test_family_grouping_only_applies_to_structured_references():
 
 def test_cards_declare_their_grain(cards):
     for c in cards:
-        assert c["grain"] in ("reference", "family"), c["slug"]
-        if c["grain"] == "family":
+        assert c["grain"] in ("reference", "family", "model"), c["slug"]
+        if c["grain"] in ("family", "model"):
             assert c["variants"] >= 1, c["slug"]
         else:
             assert c["variants"] == 0, c["slug"]
 
 
-def test_family_cards_are_coherent(cards):
+def test_grouped_cards_are_coherent(cards):
     """A wide spread on a real reference is a fact about the market and is
-    published with a warning. On a family it means our own grouping is wrong,
-    so it must never ship — Hublot 542.NX came out spanning $6,350-$19,900."""
+    published with a warning. On a group WE built it means our own grouping is
+    wrong — Hublot 542.NX came out spanning $6,350-$19,900 — so it must not
+    ship at all."""
     for c in cards:
-        if c["grain"] == "family":
-            assert not c["wide_spread"], f"{c['slug']} is an incoherent family"
+        if c["grain"] in ("family", "model"):
+            assert not c["wide_spread"], f"{c['slug']} is an incoherent {c['grain']} group"
+
+
+def test_model_cards_are_never_leftovers(cards):
+    """Assignment is most-specific-wins, so if a brand already prices its
+    references individually the model card inherits only what was too thin to
+    stand alone. For Rolex that tail is platinum and rare-dial Daytonas, which
+    is not the Daytona anyone is shopping for. Such cards must be dropped.
+
+    Comparison is normalised: the reference cards agreed on "GMT Master" while
+    the model card came out "GMT-Master", and a plain compare let it through."""
+    import re
+    def key(brand, model):
+        return (brand, re.sub(r"[^a-z0-9]", "", (model or "").lower()))
+    priced = {key(c["brand"], c["model"]) for c in cards
+              if c["grain"] in ("reference", "family") and c.get("model")}
+    for c in cards:
+        if c["grain"] == "model":
+            assert key(c["brand"], c["model"]) not in priced, (
+                f"{c['slug']} is a leftovers card — {c['brand']} already prices "
+                f"that model at reference level")
+
+
+def test_model_cards_carry_the_model_name_as_their_ref(cards):
+    for c in cards:
+        if c["grain"] == "model":
+            assert c["ref"] == c["model"], c["slug"]
 
 
 def test_a_listing_is_never_counted_in_two_cards(refs, cards):

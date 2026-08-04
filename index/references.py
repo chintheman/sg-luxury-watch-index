@@ -131,6 +131,29 @@ def _consensus(values):
     return {"value": value, "n": count, "of": len(vals)}
 
 
+def _grain_key(L, recent_by_exact, recent_by_family, recent_by_model):
+    """Most specific unit that can actually be published.
+
+    Mirrors index_engine._unit(): reference, then variant family, then model.
+    A listing lands in exactly one, so nothing is counted in two cards.
+
+    The model tier exists because reference-level pricing only works for brands
+    that reuse a reference across many listings. Rolex does (682 references,
+    busiest 179). Cartier does not: 261 listings across 106 references, busiest
+    7, and WSSA0062 has no structure to group on. But people do not shop for
+    WSSA0062 — they shop for a Santos. The model is the real buying unit there.
+    """
+    brand, ref, model = L["brand"], L.get("ref"), L.get("model")
+    if ref and recent_by_exact[(brand, ref)] >= MIN_RECENT_LIMITED:
+        return (brand, ref), "reference"
+    fam = ref_family(brand, ref) if ref else None
+    if fam and recent_by_family[(brand, fam)] >= MIN_RECENT_LIMITED:
+        return (brand, fam), "family"
+    if model and recent_by_model[(brand, model)] >= MIN_RECENT_LIMITED:
+        return (brand, model), "model"
+    return ((brand, ref), "reference") if ref else (None, None)
+
+
 def build_references():
     rows = load_rows()
     listings = parse_listings(rows, with_attributes=True)
@@ -146,27 +169,35 @@ def build_references():
     priced = []
     with_ref = 0
     for L in listings.values():
-        if not L.get("ref"):
+        # A listing needs either a usable reference or a model to be grouped.
+        if L.get("ref") and is_junk_ref(L["ref"]):
+            L = {**L, "ref": None}
+        if not L.get("ref") and not L.get("model"):
             continue
-        # Phase 0 rejects these at extraction; assert rather than trust.
-        if is_junk_ref(L["ref"]):
-            continue
-        with_ref += 1
+        if L.get("ref"):
+            with_ref += 1
         priced.append(L)
 
-    recent_by_exact = Counter(
-        (L["brand"], L["ref"]) for L in priced if L["date"] >= recent_cutoff
-    )
+    recent = [L for L in priced if L["date"] >= recent_cutoff]
+    recent_by_exact = Counter((L["brand"], L["ref"]) for L in recent if L.get("ref"))
+    recent_by_family = Counter()
+    for L in recent:
+        fam = ref_family(L["brand"], L.get("ref")) if L.get("ref") else None
+        if fam:
+            recent_by_family[(L["brand"], fam)] += 1
+    recent_by_model = Counter((L["brand"], L["model"]) for L in recent if L.get("model"))
+
     by_ref = defaultdict(list)
+    grain_of = {}
     family_variants = defaultdict(set)
     for L in priced:
-        exact = (L["brand"], L["ref"])
-        fam = ref_family(L["brand"], L["ref"])
-        if fam and recent_by_exact[exact] < MIN_RECENT_LIMITED:
-            by_ref[(L["brand"], fam)].append(L)
-            family_variants[(L["brand"], fam)].add(L["ref"])
-        else:
-            by_ref[exact].append(L)
+        key, grain = _grain_key(L, recent_by_exact, recent_by_family, recent_by_model)
+        if key is None:
+            continue
+        by_ref[key].append(L)
+        grain_of[key] = grain
+        if grain == "family":
+            family_variants[key].add(L["ref"])
 
     # ── Confirmed sales per reference, from dealer SOLD replies ──
     sales_by_ref = defaultdict(list)
@@ -264,16 +295,20 @@ def build_references():
         cuts = cuts_by_ref.get(key, [])
 
         variants = family_variants.get((brand, ref), set())
+        grain = grain_of.get((brand, ref), "reference")
         card = {
             "slug": slugify(brand, ref),
             "brand": brand,
+            # For a model card this holds the model name rather than a number.
             "ref": ref,
-            # "family" means this covers several full references that differ by
-            # dial or bracelet. Saying so matters: the reader must not read it
-            # as a quote for one exact configuration.
-            "grain": "family" if variants else "reference",
-            "variants": len(variants),
-            "model": model["value"] if model else None,
+            # How specific this card is. "family" covers several references
+            # differing by dial or bracelet; "model" covers a whole model line.
+            # Saying so matters: neither may be read as a quote for one exact
+            # configuration.
+            "grain": grain,
+            "variants": len(variants) if grain == "family"
+                        else (len({r["ref"] for r in recs if r.get("ref")}) if grain == "model" else 0),
+            "model": (ref if grain == "model" else (model["value"] if model else None)),
             "confidence": "full" if len(recent) >= MIN_RECENT_FULL else "limited",
             "n_recent": len(recent),
             "n_total": len(recs),
@@ -302,7 +337,7 @@ def build_references():
             } if reposts_by_ref[key] >= MIN_REPOSTS_PER_REF else None),
         }
 
-        # ── A family must actually describe one thing ──
+        # ── A grouped card must actually describe one thing ──
         # When an exact reference clears the bar it takes its own card, which
         # leaves the family holding only the leftovers — and those can be
         # wildly heterogeneous. Hublot 542.NX came out spanning $6,350 to
@@ -310,7 +345,7 @@ def build_references():
         # about the market (see WIDE_SPREAD_PCT); on a family it just means the
         # grouping is wrong, so the card is dropped rather than shown with a
         # caveat that cannot rescue it.
-        if card["grain"] == "family" and card["wide_spread"]:
+        if card["grain"] in ("family", "model") and card["wide_spread"]:
             rejected_incoherent += 1
             continue
 
@@ -320,6 +355,27 @@ def build_references():
             f"{card['slug']}: fair range does not contain the median"
         assert card["n_recent"] >= MIN_RECENT_LIMITED, f"{card['slug']}: too thin"
         references.append(card)
+
+    # ── Drop model cards that are only holding leftovers ──
+    # See the module note on grain. If any reference or family card already
+    # covers this (brand, model), the model card was built from the references
+    # that were too thin to stand alone — a biased tail, not the model.
+    # Normalised, because dealers write the same model both ways: the
+    # reference cards agreed on "GMT Master" while the model card came out
+    # "GMT-Master", and a plain lowercase compare let the leftovers through.
+    def _mkey(brand, model):
+        return (brand, re.sub(r"[^a-z0-9]", "", (model or "").lower()))
+
+    priced_models = {
+        _mkey(c["brand"], c["model"])
+        for c in references if c["grain"] in ("reference", "family") and c.get("model")
+    }
+    before = len(references)
+    references = [
+        c for c in references
+        if not (c["grain"] == "model" and _mkey(c["brand"], c["model"]) in priced_models)
+    ]
+    rejected_leftovers = before - len(references)
 
     references.sort(key=lambda c: -c["n_recent"])
 
@@ -351,18 +407,23 @@ def build_references():
             "while brands of similar volume spread across many and never reach "
             "a publishable sample. Where a brand encodes dial and bracelet in "
             "the reference itself (Audemars Piguet, Omega, Hublot), close "
-            "variants are grouped and the card says so. Specifications are the "
-            "most common value across listings, not a verified catalogue spec."
+            "variants are grouped. Where references are unique per watch and "
+            "never repeat enough to price (Cartier, Patek Philippe, Panerai), "
+            "the card covers a whole model line instead. Every card says which "
+            "of the three it is. Specifications are the most common value "
+            "across listings, not a verified catalogue spec."
         ),
         "coverage": {
             "references_published": len(references),
             "families": sum(1 for c in references if c["grain"] == "family"),
+            "model_level": sum(1 for c in references if c["grain"] == "model"),
             "wide_spread": sum(1 for c in references if c["wide_spread"]),
             "full_confidence": len(full),
             "limited_confidence": len(references) - len(full),
             "listings_with_a_reference": with_ref,
             "references_too_thin_to_publish": rejected_thin,
-            "families_dropped_as_incoherent": rejected_incoherent,
+            "groups_dropped_as_incoherent": rejected_incoherent,
+            "model_cards_dropped_as_leftovers": rejected_leftovers,
             "by_brand": dict(by_brand.most_common()),
         },
         "references": references,
@@ -372,10 +433,12 @@ def build_references():
     OUT.write_text(json.dumps(out, indent=2, default=str))
 
     fams = sum(1 for c in references if c["grain"] == "family")
+    mods = sum(1 for c in references if c["grain"] == "model")
     print(f"References: {len(references)} published "
-          f"({len(full)} full confidence, {len(references) - len(full)} limited, "
-          f"{fams} variant-grouped) across {len(by_brand)} brand(s); "
-          f"{rejected_thin} too thin, {rejected_incoherent} family group(s) too broad")
+          f"({len(full)} full confidence, {len(references) - len(full)} limited; "
+          f"{fams} variant-grouped, {mods} model-level) across {len(by_brand)} brand(s); "
+          f"{rejected_thin} too thin, {rejected_incoherent} group(s) too broad, "
+          f"{rejected_leftovers} model card(s) were leftovers")
     top = references[0] if references else None
     if top:
         print(f"  deepest: {top['brand']} {top['ref']} n={top['n_recent']} "

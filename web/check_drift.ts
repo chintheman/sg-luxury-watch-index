@@ -43,6 +43,7 @@ const ROUTES: Route[] = [
       ["brand filter", { brand: "Rolex" }],
       ["condition + sort", { condition: "p", sort: "cheapest", limit: "50" }],
       ["photos only", { hasPhotos: "true", limit: "25" }],
+      ["reference filter", { ref: "126334", limit: "60" }],
     ],
   },
   {

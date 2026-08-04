@@ -99,6 +99,9 @@ record("index.methodologyVersion",
 
 // ── Per-listing fields: every one is read in the listing row ──
 const REQUIRED_LISTING = ["id", "date", "brand", "title", "price", "condition", "channel", "photos", "link"];
+// `ref` may legitimately be null (not every listing states one), but the key
+// must exist — /watches/<slug> joins listings to cards on it.
+const REQUIRED_LISTING_KEYS = ["ref"];
 const sample = (payload.listings ?? []).slice(0, 50);
 if (sample.length === 0) {
   record("listings[]", false, "no listings returned", "the page shows 'No listings match your filters'");
@@ -111,6 +114,30 @@ if (sample.length === 0) {
   }
   record("listings[].price is numeric", sample.every((l: any) => isNum(l.price)),
     "checked " + sample.length, "prices render as NaN in the SGD formatter");
+  for (const f of REQUIRED_LISTING_KEYS) {
+    const absent = sample.filter((l: any) => !(f in l));
+    record(`listings[].${f} key present`, absent.length === 0,
+      absent.length ? `${absent.length}/${sample.length} missing the key` : `present on all ${sample.length}`,
+      `every reference page shows an empty "on the market now" list`);
+  }
+  // The reference page fetches ?ref=; if that filter stops working the list
+  // silently fills with unrelated watches or empties.
+  try {
+    const withRef = sample.find((l: any) => l.ref);
+    if (withRef) {
+      const res = await fetch(`${PUBLIC_API}?ref=${encodeURIComponent(withRef.ref)}&limit=60`,
+        { headers: { Accept: "application/json" } }).then((r) => r.json());
+      const got = res.listings ?? [];
+      const wrong = got.filter((l: any) =>
+        !(l.ref || "").toUpperCase().startsWith(withRef.ref.toUpperCase()));
+      record("listings ?ref= filter", got.length > 0 && wrong.length === 0,
+        `${got.length} returned, ${wrong.length} off-target`,
+        "reference pages list the wrong watches, or none at all");
+    }
+  } catch (e: any) {
+    record("listings ?ref= filter", false, e.message,
+      "reference pages list the wrong watches, or none at all");
+  }
 }
 
 // ── Sanity: a technically-valid but empty payload still kills the page ──

@@ -41,6 +41,11 @@ export default async (c: Context) => {
         date: r.d,
         brand: r.b,
         model: model,
+        // The reference is what /watches/<slug> joins on. It used to be
+        // withheld here, so the reference page fell back to searching for the
+        // number inside a 120-character title — which missed 47 of 113 cards
+        // and made the click-through to Telegram a dead end on most of them.
+        ref: r.ref || null,
         title: title,
         price: r.p,
         condition: r.n || "u",
@@ -75,6 +80,16 @@ export default async (c: Context) => {
     }
     if (params.hasPhotos === "true") {
       filtered = filtered.filter(l => l.photos > 0);
+    }
+    if (params.ref) {
+      const want = params.ref.toUpperCase();
+      filtered = filtered.filter(l => {
+        const got = (l.ref || "").toUpperCase();
+        if (!got) return false;
+        // Exact, or a variant of a grouped reference (15510ST.OO.1320ST.06
+        // belongs to the 15510ST card).
+        return got === want || got.startsWith(want + ".");
+      });
     }
 
     // Sort
