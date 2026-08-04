@@ -125,11 +125,6 @@ export default async (c: Context) => {
         change_30d_pct: indexDataObj.composite?.change_30d_pct,
         change_90d: indexDataObj.composite?.change_90d,
         change_90d_pct: indexDataObj.composite?.change_90d_pct,
-        retailComposite: indexDataObj.retail_composite ? {
-          current: indexDataObj.retail_composite.current,
-          change_1d: indexDataObj.retail_composite.change_1d,
-          change_1d_pct: indexDataObj.retail_composite.change_1d_pct,
-        } : null,
         brandSub: brandSubindices,
         brandsTracked: indexDataObj.meta?.tracked_brands,
         anchorDate: indexDataObj.meta?.anchor_date,

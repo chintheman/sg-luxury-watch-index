@@ -1,6 +1,6 @@
 # SG Luxury Watch Index (SG-LWIX)
 
-Real-time composite price index for Singapore's pre-owned luxury watch market. Aggregates asking prices from 15+ Telegram dealer channels, producing a Laspeyres-weighted composite with brand sub-indices, condition spreads, and retail-anchored comparison.
+Real-time composite price index for Singapore's pre-owned luxury watch market. Aggregates asking prices from 15+ Telegram dealer channels, producing a volume-weighted, matched-model composite with brand sub-indices and condition spreads.
 
 ## Quick Start
 

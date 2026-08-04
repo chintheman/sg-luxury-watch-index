@@ -88,11 +88,13 @@ worse on *both* volatility and freshness.
 
 ## Bugs fixed in v3
 
-- **The retail comparison was inverted.** v2 zipped a windowed price list
-  against a same-day retail list, discarding most prices and pairing the
-  survivors with unrelated watches' retail values. It published "4.5% below
-  retail" when the correct answer was above. Each record is now paired with
-  its own retail price.
+- **The retail comparison was removed entirely.** v2 zipped a windowed price
+  list against a same-day retail list, discarding most prices and pairing the
+  survivors with unrelated watches' retail values — publishing "4.5% below
+  retail" when its own spread field said 31% above. v3 first fixed the
+  pairing, then dropped the measure: it rested on a hand-entered, undated
+  price table with no source, and nothing it produced was ever displayed.
+  See *Not measured* below.
 - **Down-days credited the wrong brands.** The insight sentence named
   positive contributors regardless of the index's direction.
 - **The 90-day change used a 180-day lookback** and, because the series began
@@ -112,14 +114,31 @@ worse on *both* volatility and freshness.
 ## Known limits
 
 - **Asking prices, not sales.** No transacted price is observable.
-- **Retail comparisons are weak.** The retail price table is hand-entered,
-  undated, and 62% of matches fall through to a brand-wide median. Rolex is
-  ~68% of matched records, so any "vs retail" figure is mostly a Rolex figure.
+- **Premium over retail is not measured.** See *Not measured* below.
 - **Coverage is uneven.** 30% of series days are genuinely computed; the rest
   carry the previous value forward. `composite.stale` and
   `composite.days_since_fresh` say which.
 - **Thin brands are excluded.** 18 of 55 brands lack enough listings to
   baseline at all.
+
+## Not measured
+
+**Premium or discount versus retail.** The index compares each watch against
+its own trading history, never against a list price. There is no "X% above
+retail" figure anywhere in the output.
+
+An earlier version carried one, built from roughly 300 boutique prices typed
+directly into the source file. That table had no citation, no capture date,
+and no evidence the figures were Singapore list prices; 62% of lookups failed
+to match a reference and fell back to the median of every price recorded for
+that brand, so an unmatched Patek was measured against the average of thirty
+unrelated Pateks. Rolex made up ~68% of the matches that did resolve, making
+any market-wide reading really a Rolex reading. Nothing derived from it was
+ever rendered on the site.
+
+Publishing this properly means sourcing dated list prices per reference and
+re-capturing them at every price rise. Until that exists, the figure is not
+estimated, and the absence is stated rather than filled with a fallback.
 - **Channel mix is not constant.** Dealers join, go quiet, and change posting
   habits; the availability score uses a trailing ceiling to limit this, but it
   is not fully neutralised.

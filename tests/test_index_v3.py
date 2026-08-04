@@ -37,16 +37,20 @@ def test_prestige_is_no_longer_used_for_weighting():
     assert "PRESTIGE" not in weight_block
 
 
-# ── The retail bug ─────────────────────────────────────────────────────────
+# ── Retail measures are gone, not merely fixed ─────────────────────────────
+# v3 first repaired the inverted retail comparison, then removed it: it rested
+# on ~300 hand-entered, undated, unsourced list prices where 62% of lookups
+# fell through to a brand-wide median. This asserts it cannot creep back in
+# without someone deliberately re-adding it.
 
-def test_retail_measures_do_not_contradict_each_other(idx):
-    """v2 said 4.5% BELOW retail while its own spread field said 31% ABOVE."""
-    rc = idx["retail_composite"]["current"]
-    rs = idx["retail_spread"]["current"]
-    if rc is None or rs is None:
-        pytest.skip("no retail data this build")
-    # retail_composite > 1 means secondary above retail; retail_spread < 0 too.
-    assert (rc > 1) == (rs < 0), "the two retail measures disagree on direction"
+def test_no_retail_measures_are_published(idx):
+    for key in ("retail_composite", "retail_spread"):
+        assert key not in idx, f"{key} is back in the index output"
+
+
+def test_no_retail_wording_in_insights(idx):
+    for name, text in (idx.get("insights") or {}).items():
+        assert "retail" not in text.lower(), f"insight {name!r} mentions retail: {text}"
 
 
 # ── The insight sign bug ───────────────────────────────────────────────────
@@ -157,7 +161,7 @@ def test_records_are_matched_at_model_level():
     assert "UNIT_REF_MIN_LISTINGS" in src
     assert "def brand_ratios_on" in src
     # the composite must be built from matched ratios, not raw brand medians
-    loop = src[src.index("for date in dates_sorted:"):src.index("# \u2500\u2500 Retail-anchored composite")]
+    loop = src[src.index("for date in dates_sorted:"):src.index("# Availability — raw same-day count")]
     assert "brand_ratios_on(date)" in loop
 
 

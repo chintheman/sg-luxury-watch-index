@@ -9,7 +9,7 @@ admission check but then get `brand: null` from the field actually shown/used
 downstream. Everything routes through here now so that can't happen again.
 
 Canonical names must stay exactly as-is: they're also the keys used by
-PRESTIGE / RETAIL_PRICES / BRAND_MODEL_MAP in index_engine.py and filter.py.
+PRESTIGE / BRAND_MODEL_MAP in index_engine.py and filter.py.
 """
 import re
 import unicodedata

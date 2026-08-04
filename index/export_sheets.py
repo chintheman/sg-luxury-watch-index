@@ -87,19 +87,18 @@ def export():
            for p in ((index.get("condition_indices") or {}).get("preowned") or {}).get("series", [])}
     new = {p["date"]: p.get("value")
            for p in ((index.get("condition_indices") or {}).get("new") or {}).get("series", [])}
-    ret = series("retail_composite")
     avail = series("availability")
     rows = []
     for p in comp:
         d = p["date"]
         rows.append([d, p.get("value"), p.get("stale"), p.get("brands_tracked"),
                      p.get("total_listings"), pre.get(d), new.get(d),
-                     ret.get(d), avail.get(d)])
+                     avail.get(d)])
     written["index_history.csv"] = _write(
         "index_history.csv",
         ["date", "composite", "is_carried_forward", "brands_tracked",
          "listings_in_window", "preowned_index", "new_index",
-         "retail_anchored_index", "availability_score"], rows)
+         "availability_score"], rows)
 
     # ── brand_summary.csv ──
     counts = index.get("brand_counts") or {}
