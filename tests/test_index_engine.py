@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from statistics import median
 
 import index.index_engine as ie
-from index.index_engine import find_price_outliers, extract_brand, PRESTIGE, fill_series, MIN_PER_BRAND
+from index.index_engine import find_price_outliers, extract_brand, fill_series, MIN_PER_BRAND
 
 SGT = timezone(timedelta(hours=8))
 
@@ -54,10 +54,9 @@ def test_skips_brands_with_no_baseline():
     assert find_price_outliers(daily_by_brand, {}) == []
 
 
-def test_newly_added_brands_resolve_and_have_prestige_weights():
+def test_newly_added_brands_resolve():
     # Brands added to close the "brand: null" gap found in the audit must be
-    # both matchable and present in PRESTIGE (missing entries default to a
-    # placeholder weight of 3 rather than erroring, but should be curated).
+    # matchable. (They once also needed a PRESTIGE entry; that table is gone.)
     for text, brand in [
         ("Roger Dubuis Excalibur 42mm", "Roger Dubuis"),
         ("Louis Moinet Memoris", "Louis Moinet"),
@@ -65,7 +64,6 @@ def test_newly_added_brands_resolve_and_have_prestige_weights():
         ("Chanel J12 Automatic", "Chanel"),
     ]:
         assert extract_brand(text) == brand
-        assert brand in PRESTIGE
 
 
 # ── MIN_PER_BRAND / fill_series staleness ───────────────────────────────

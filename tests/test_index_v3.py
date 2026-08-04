@@ -29,12 +29,11 @@ def test_index_reports_v3(idx):
     assert idx["meta"]["version"].startswith("3.")
 
 
-def test_prestige_is_no_longer_used_for_weighting():
-    """A hand-assigned brand ranking must not drive a price index."""
-    import index.index_engine as ie
+def test_prestige_is_gone_entirely():
+    """A hand-assigned brand ranking must not drive a price index. v3 stopped
+    weighting by it; the table itself has since been deleted."""
     src = (ROOT / "index" / "index_engine.py").read_text()
-    weight_block = src[src.index("Phase 3: Brand weights"):src.index("Phase 4:")]
-    assert "PRESTIGE" not in weight_block
+    assert "PRESTIGE" not in src
 
 
 # ── Retail measures are gone, not merely fixed ─────────────────────────────

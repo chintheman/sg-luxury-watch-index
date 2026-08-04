@@ -30,23 +30,37 @@ python3 index/index_engine.py           # Index recalculation only
 └── sold_tracer.py           # Cross-references SOLD messages against active listings
 ```
 
-## Index Methodology (v2)
+## Index Methodology (v3.1)
 
-- **Type:** Laspeyres-weighted composite
-- **Brand weights:** 50% horological prestige (0–10) + 50% listing volume (6mo rolling)
-- **Baseline:** Per-brand 180-day window median from first appearance
-- **Scale:** 1.0 represents brands trading exactly at their own baseline on
-  average — it's a reference scale, not a value pinned to a specific date.
-  See index.json's `meta.first_computed` for the actual first computed
+Every listing is compared only against its own trading history — never
+against a list price, and never against other models. See METHODOLOGY.md for
+the full write-up and the v2 → v3 break.
+
+- **Type:** volume-weighted, matched-model composite
+- **Matching unit:** exact reference (8+ listings), else model (3+), else
+  brand. Units aggregate up to brands; this covers 99% of listings.
+- **Baseline:** median of each unit's **first 30 listings**. Sample-anchored,
+  not calendar-anchored — a calendar window silently excluded 26 of 55 brands
+  that first appeared after it.
+- **Brand weights:** sqrt of recent listing volume, normalised. No prestige
+  term: a hand-assigned ranking is volume-blind and does not belong in a
+  price index.
+- **Scale:** 1.0 represents units trading exactly at their own baseline on
+  average — a reference scale, not a value pinned to a specific date. See
+  index.json's `meta.first_computed` for the actual first computed
   value/date.
-- **Window:** 3-day rolling median per brand (smooths sparse daily data)
-- **Thresholds:** 3 listings per brand (needed for the median to actually
-  resist an outlier), 3+ brands for valid composite day
-- **Gap filling:** Carry-forward of last valid value, marked `stale: true`
+- **Window:** 21-day rolling pool per brand (28 for the condition indices,
+  which are much thinner)
+- **Thresholds:** 3 listings per brand-day, 3+ brands for a valid composite
+  day
+- **Outliers:** excluded from baselines, flagged but retained in daily windows
+- **Gap filling:** Carry-forward of last valid value, marked `stale: true`.
+  Roughly 70% of series days are carried forward.
+- **Not measured:** premium/discount vs retail. See METHODOLOGY.md.
 
 ## Data Sources
 
-15 Singapore-based Telegram watch dealer channels scraped via public `t.me/s/` pages — pure HTTP, no API key needed.
+14 Singapore-based Telegram watch dealer channels scraped via public `t.me/s/` pages — pure HTTP, no API key needed. Non-Singapore stock is excluded outright rather than currency-converted.
 
 ## Sold Detection
 

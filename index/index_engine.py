@@ -5,12 +5,15 @@ SG Luxury Watch Index — Index Engine v3.1
 Produces a family of indices from Telegram secondary-market listings.
 
 Methodology:
-  - Laspeyres-weighted composite (brand prestige × listing volume)
-  - Median price per brand per day (outlier-resilient)
+  - Volume-weighted composite: sqrt(listing volume), no prestige term
+  - Matched-model units (reference > model > brand), each against its
+    own baseline, so a change in model mix cannot masquerade as a
+    price move
+  - Median price per unit per day (outlier-resilient)
   - Separate indices by condition (Pre-Owned, NEW/NOS)
   - Brand sub-indices for top brands
   - Availability score (daily listing count)
-  - Per-brand baselines: first 90 days of each brand's data
+  - Per-unit baselines: each unit's first 30 listings
   - Anchor: 1.0 at the date when 50%+ brands have baseline data
   - Minimum 3 listings per brand per day for inclusion
 
@@ -116,47 +119,6 @@ BASELINE_SAMPLE_TARGET = 30
 # brands. This covers 99% of listings across 256 units.
 UNIT_REF_MIN_LISTINGS = 8
 UNIT_MODEL_MIN_LISTINGS = 3
-
-# ── Prestige weights (0-10, from Chrono24 + horological consensus) ──
-# Gerald Genta, Parmigiani Fleurier, Roger Dubuis, Louis Moinet, Glashutte
-# Original, Chanel, and Louis Erard were added to close a "brand: null" gap
-# (real listings under these brands weren't recognized at all before). Their
-# weights were placed by cross-checking brand positioning against
-# independent horology sources rather than guessed cold:
-#   - Roger Dubuis / Parmigiani Fleurier (6.5): both consistently described
-#     as haute horlogerie tier — hand-finishing, complications, limited
-#     production — comparable to Girard-Perregaux (7) in exclusivity, placed
-#     slightly below it for lower brand recognition/heritage depth.
-#   - Gerald Genta (7): the eponymous designer of the AP Royal Oak and
-#     Patek Nautilus; LVMH-owned via La Fabrique du Temps. High design
-#     pedigree, but the brand itself has less market presence than GP/JLC.
-#   - Louis Moinet (6): "extremely interesting," limited/one-off production,
-#     but low mainstream brand recognition despite high-end positioning —
-#     placed with Chopard/Zenith rather than the haute horlogerie tier.
-#   - Glashutte Original (5.5): established German in-house manufacture,
-#     grouped with IWC/Panerai/Bulgari as respected-but-not-top-tier.
-#   - Chanel (4.5): explicitly framed in horology coverage as a fashion
-#     house watchmaking success (the J12's ceramic bracelet was genuinely
-#     influential) rather than a specialist horological manufacture —
-#     placed with Breitling/Hublot/Tudor, below Cartier/Bulgari.
-#   - Louis Erard (3.5): directly described as "entry-level-ish," explicitly
-#     marketed as an affordable alternative for Breguet/F.P. Journe admirers
-#     — placed with TAG Heuer/Bell & Ross.
-# Still ultimately subjective — worth a sanity pass from someone closer to
-# the SG secondary market than a web search.
-PRESTIGE = {
-    "Patek Philippe": 10, "Richard Mille": 10, "A. Lange & Sohne": 9.5,
-    "Audemars Piguet": 9, "Vacheron Constantin": 9, "Breguet": 8.5,
-    "Rolex": 8, "H. Moser": 8, "Blancpain": 7.5,
-    "Jaeger-LeCoultre": 7, "Girard-Perregaux": 7, "Gerald Genta": 7,
-    "Parmigiani Fleurier": 6.5, "Ulysse Nardin": 6.5, "Roger Dubuis": 6.5,
-    "Cartier": 6.5, "Chopard": 6, "Zenith": 6, "Louis Moinet": 6,
-    "IWC": 5.5, "Panerai": 5.5, "Bulgari": 5.5, "Glashutte Original": 5.5,
-    "Omega": 5, "Grand Seiko": 5, "Chanel": 4.5, "Louis Erard": 3.5,
-    "Breitling": 4.5, "Hublot": 4.5, "Tudor": 4,
-    "TAG Heuer": 3.5, "Bell & Ross": 3.5,
-    "Franck Muller": 3, "Seiko": 2,
-}
 
 # ── Gap filling ────────────────────────────────────────────────────
 def fill_series(series):
