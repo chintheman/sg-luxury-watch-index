@@ -55,7 +55,7 @@ DB = BASE / "data" / "listings.db"
 OUT = BASE / "data" / "index.json"
 
 ANCHOR_VALUE = 1.0
-INDEX_VERSION = "3.1"
+INDEX_VERSION = "3.2"
 MIN_BASELINE_SAMPLES = 3
 
 # ── v3 pooling parameters ─────────────────────────────────────────────────

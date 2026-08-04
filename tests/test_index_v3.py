@@ -181,3 +181,59 @@ def test_no_year_is_parsed_as_a_price():
     assert extract_price("https://x.com/news/rolex-price-2026-daytona/") is None
     # a genuine price in that numeric range must still parse
     assert extract_price("SGD $2,025") == 2025
+
+
+# ── Reference extraction hygiene (v3.2) ────────────────────────────────────
+# The ref regex only matched digit-leading tokens, so it truncated dotted
+# references and could not see letter-leading ones. On failure it did not
+# return None — it returned the first digit run in the text, usually part of
+# the price. "900" was recorded as a reference for 17 different brands.
+
+def test_bare_three_digit_token_is_never_a_reference():
+    from filter import is_junk_ref, extract_model
+    assert is_junk_ref("900")
+    assert is_junk_ref("100")
+    assert not is_junk_ref("5711")      # Patek 5711 is a real 4-digit reference
+    assert not is_junk_ref("126334")
+    # the real failing case: the digits come out of the price
+    model, ref = extract_model("Cartier Santos de Cartier Large Price: $8,900", "Cartier")
+    assert ref != "900"
+
+
+def test_dotted_references_are_not_truncated():
+    """Omega 310.32.42.50.02.001 used to come out as '310.32.42', splitting one
+    watch across several 'references'."""
+    from filter import extract_model
+    model, ref = extract_model(
+        "Omega Speedmaster Moonwatch Professional 310.32.42.50.02.001 $9,900", "Omega")
+    assert ref == "310.32.42.50.02.001"
+
+
+def test_letter_leading_references_are_found():
+    from filter import extract_model
+    cases = [
+        ("Cartier Santos WSSA0062 Large Steel $8,900", "Cartier", "WSSA0062"),
+        ("IWC Portugieser Chronograph IW371604 $9,500", "IWC", "IW371604"),
+        ("Hublot Big Bang Unico 411.NM.1170.RX 45mm $21,000", "Hublot", "411.NM.1170.RX"),
+        ("Audemars Piguet Royal Oak 15510ST.OO.1320ST.06 $38,000",
+         "Audemars Piguet", "15510ST.OO.1320ST.06"),
+    ]
+    for text, brand, expected in cases:
+        assert extract_model(text, brand)[1] == expected, text
+
+
+def test_panerai_references_normalise_to_one_form():
+    """PAM 1312 / PAM01312 / Pam 104 are the same dealer writing the same watch
+    three ways; they must aggregate together."""
+    from filter import extract_model
+    assert extract_model("Panerai Luminor PAM01312 44mm $8,900", "Panerai")[1] == "PAM01312"
+    assert extract_model("Panerai Luminor PAM 1312 44mm $8,900", "Panerai")[1] == "PAM01312"
+    assert extract_model("Panerai Luminor Pam 104 $7,500", "Panerai")[1] == "PAM00104"
+
+
+def test_rolex_reference_suffixes_are_preserved():
+    """BLNR and BLRO are different watches at different prices; the suffix must
+    survive or they merge into one bogus aggregate."""
+    from filter import extract_model
+    assert extract_model("Rolex GMT Master II 126710BLNR Jubilee $23,400", "Rolex")[1] == "126710BLNR"
+    assert extract_model("Rolex Datejust 41 126334 Jubilee $19,900", "Rolex")[1] == "126334"

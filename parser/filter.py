@@ -455,6 +455,97 @@ BRAND_MODEL_MAP = [
 REF_PATTERN = re.compile(r'\b(\d{3,6}(?:\.\d{2,4}){0,2}[A-Z]{0,4})\b')
 YEAR_RE = re.compile(r'\b(19\d{2}|20[0-3]\d)\b')
 
+# ── Reference extraction ────────────────────────────────────────────
+# REF_PATTERN only matches tokens that START with digits. That has two failure
+# modes, and neither one is quiet:
+#
+#   1. It truncates dotted references. Omega 310.32.42.50.02.001 comes out as
+#      "310.32.42" because the pattern allows at most two dot-groups, so one
+#      watch splits across several "references".
+#   2. It cannot see letter-leading references at all (Cartier WSSA0062,
+#      Panerai PAM00104, Breitling A17325241B1A1). When the real reference is
+#      invisible it does not return None — it returns the first digit run
+#      anywhere in the text, which is routinely a fragment of the price.
+#
+# A corpus scan found "900" attributed as a reference to 17 different brands
+# (it comes from "$8,900"), and bare 3-digit tokens were 17% of all extracted
+# references. Those fabricated references were enough to produce false
+# aggregates: Cartier "100" appeared 48 times, Hublot "542" 41 times.
+#
+# Fix: try the brand's own reference format first, and never accept a bare
+# 3-digit token. A 4-digit token is still allowed — Patek 5711 is real.
+
+
+def _norm_pam(s):
+    """PAM 1312 / PAM01312 / Pam 01312 -> PAM01312."""
+    digits = re.sub(r'\D', '', s)
+    return "PAM" + digits.zfill(5)
+
+
+def _norm_iw(s):
+    return "IW" + re.sub(r'\D', '', s)
+
+
+def _norm_plain(s):
+    return re.sub(r'\s+', '', s).upper()
+
+
+# (brand substring, [(pattern, normaliser)]) — tried before REF_PATTERN when the
+# brand is known. Fill rates measured across the full corpus are in comments.
+BRAND_REF_PATTERNS = [
+    ("Omega", [                                                    # 68%
+        (re.compile(r'\b\d{3}\.\d{2}\.\d{2}\.\d{2}\.\d{2}\.\d{3}\b'), _norm_plain),
+    ]),
+    ("Hublot", [                                                   # 84%
+        (re.compile(r'\b\d{3}\.[A-Z]{2}\.\d{4}\.[A-Z]{2}(?:\.[A-Z0-9]{3,6})?\b', re.I), _norm_plain),
+    ]),
+    ("Audemars Piguet", [                                          # 87%
+        (re.compile(r'\b\d{5}[A-Z]{2}\.[A-Z0-9]{2}\.[A-Z0-9]{4,8}\.\d{2}\b', re.I), _norm_plain),
+    ]),
+    ("Panerai", [                                                  # 98%
+        (re.compile(r'\bPAM\s?\d{3,6}\b', re.I), _norm_pam),
+    ]),
+    ("IWC", [                                                      # 94%
+        (re.compile(r'\bIW\s?\d{6}\b', re.I), _norm_iw),
+    ]),
+    ("Cartier", [                                                  # 94%
+        (re.compile(r'\bW[A-Z]{0,4}\d{3,6}[A-Z0-9]{0,4}\b'), _norm_plain),
+    ]),
+    ("Breitling", [                                                # 12%
+        (re.compile(r'\b[A-Z]{1,2}\d{8,11}[A-Z0-9]{0,4}\b'), _norm_plain),
+    ]),
+]
+
+
+def is_junk_ref(rv):
+    """A bare 3-digit token is never a reference in this corpus.
+
+    It is what REF_PATTERN returns when the real reference is letter-leading or
+    dotted and therefore invisible to it — most often a slice of the price.
+    """
+    return bool(rv) and re.fullmatch(r'\d{3}', rv) is not None
+
+
+def _brand_ref(text, brand):
+    """The brand's own reference format, or None if this brand has no rule."""
+    for bw, patterns in BRAND_REF_PATTERNS:
+        if bw.lower() in brand.lower():
+            for pat, norm in patterns:
+                m = pat.search(text)
+                if m:
+                    return norm(m.group(0))
+            return None
+    return None
+
+
+def _generic_ref(text):
+    for ref_m in REF_PATTERN.finditer(text):
+        rv = ref_m.group(1)
+        if YEAR_RE.fullmatch(rv) or is_junk_ref(rv):
+            continue
+        return rv
+    return None
+
 
 def extract_model(text, brand=None):
     """Extract watch model from listing text, optionally validating against brand."""
@@ -467,20 +558,16 @@ def extract_model(text, brand=None):
                     m = re.search(pat, text, re.I)
                     if m:
                         model = m.group(0)
-                        ref = None
-                        for ref_m in REF_PATTERN.finditer(text):
-                            rv = ref_m.group(1)
-                            if YEAR_RE.fullmatch(rv):
-                                continue
-                            ref = rv
-                            break
+                        # Brand-specific format first; it is the only one that
+                        # can see letter-leading and long dotted references.
+                        ref = _brand_ref(text, brand) or _generic_ref(text)
                         return model, ref
                 # Only try this brand's patterns - nothing matched
                 return None, None
     # Last resort: reference number
     for ref_m in REF_PATTERN.finditer(text):
         rv = ref_m.group(1)
-        if YEAR_RE.fullmatch(rv):
+        if YEAR_RE.fullmatch(rv) or is_junk_ref(rv):
             continue
         if '.' in rv or re.search(r'(?i)\b(ref|model)\b', text):
             return None, rv

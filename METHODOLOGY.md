@@ -86,6 +86,45 @@ for a twice-daily index. This market is thin enough that a shorter window
 measures sampling noise rather than price: every tighter configuration scored
 worse on *both* volatility and freshness.
 
+## v3.2 — reference extraction, and why the series moved
+
+v3.2 changes no maths. It fixes what counts as a *reference*, and because
+references define the matching units the index is built on, the published
+series was revised. This is recorded rather than quietly absorbed.
+
+**What was wrong.** The reference regex only matched tokens starting with a
+digit. That meant it truncated dotted references — Omega
+`310.32.42.50.02.001` became `310.32.42`, splitting one watch across several
+"references" — and it could not see letter-leading references at all
+(Cartier `WSSA0062`, Panerai `PAM00104`, Breitling `A17325241B1A1`). When the
+real reference was invisible it did not return nothing. It returned the first
+digit run anywhere in the text, which was routinely a slice of the price.
+
+The result was fabricated reference groups. `900` was recorded as a reference
+for 17 different brands — it comes from `$8,900`. Bare 3-digit tokens made up
+17% of all extracted references, and some were large enough to look
+authoritative: `Cartier 100` appeared 48 times, `Hublot 542` 41 times.
+
+**The fix.** Each brand's own reference format is tried first, and a bare
+3-digit token is never accepted as a reference. Four-digit tokens still are —
+Patek `5711` is real. Measured fill rates: Panerai 98%, IWC 94%, Cartier 94%,
+Audemars Piguet 87%, Hublot 84%, Omega 68%.
+
+**Effect on the published series**, measured on identical data:
+
+| | v3.1 | v3.2 |
+|---|---|---|
+| Composite | 1.0763 | 1.1161 |
+| Genuinely computed days | 109 | **145** |
+| Days that lost a value | — | **0** |
+| Days whose value moved | — | 118 (median 2.4%, max 8.7%) |
+| Mean daily move | 2.01% | 2.47% |
+
+Coverage improved by a third and no day lost a value. Volatility rose slightly
+because thin days that previously could not compute now do. The prior values
+were partly built on reference groups that did not exist, so the revision
+corrects them rather than restating them.
+
 ## Bugs fixed in v3
 
 - **The retail comparison was removed entirely.** v2 zipped a windowed price
