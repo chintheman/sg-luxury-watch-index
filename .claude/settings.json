@@ -1,0 +1,27 @@
+{
+  "$comment": [
+    "Project settings — loaded automatically by any Claude Code session opened in",
+    "this repository. CI passes .claude/qa-ci-settings.json explicitly instead.",
+    "",
+    "Both files register the SAME guard, and that is deliberate. Without this",
+    "file, a local session would get the agents and skills but none of the",
+    "enforcement: patch-smith could edit tests, spec-oracle could read the",
+    "implementation, and any agent could launder a snapshot. That is the",
+    "degraded mode the whole design exists to prevent (§P5) — agents with advice",
+    "instead of agents with gates.",
+    "",
+    "The guard is a no-op for ordinary work: with no agent_type in the payload,",
+    "the main session is treated as the orchestrator and only the global rules",
+    "apply (no snapshot laundering, no editing the gates from inside a session)."
+  ],
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|NotebookEdit|MultiEdit|Read|Grep|Glob|WebFetch|Bash",
+        "hooks": [
+          { "type": "command", "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/qa-guard.sh" }
+        ]
+      }
+    ]
+  }
+}

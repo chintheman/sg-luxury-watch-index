@@ -1,0 +1,288 @@
+{
+  "generated": "2026-08-08",
+  "window_days": 90,
+  "history_truncated": true,
+  "files": {
+    ".github/workflows/tests.yml": {
+      "churn_90d": 17,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    ".gitignore": {
+      "churn_90d": 19,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "AGENTS.md": {
+      "churn_90d": 97,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "ARCHITECTURE.md": {
+      "churn_90d": 125,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "METHODOLOGY.md": {
+      "churn_90d": 183,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "README.md": {
+      "churn_90d": 75,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "index/__init__.py": {
+      "churn_90d": 0,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "index/export_pipeline.py": {
+      "churn_90d": 291,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "index/export_sheets.py": {
+      "churn_90d": 268,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "index/index_engine.py": {
+      "churn_90d": 762,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "index/references.py": {
+      "churn_90d": 451,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "index/signals.py": {
+      "churn_90d": 277,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "migrations/001_reply_and_edits.py": {
+      "churn_90d": 107,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "ops/cron.md": {
+      "churn_90d": 77,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "parser/__init__.py": {
+      "churn_90d": 0,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "parser/attributes.py": {
+      "churn_90d": 163,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "parser/batch.py": {
+      "churn_90d": 67,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "parser/brands.py": {
+      "churn_90d": 179,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "parser/dedupe.py": {
+      "churn_90d": 156,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "parser/filter.py": {
+      "churn_90d": 594,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "pipeline.py": {
+      "churn_90d": 219,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "run_filter.py": {
+      "churn_90d": 29,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "scraper/__init__.py": {
+      "churn_90d": 0,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "scraper/scraper.py": {
+      "churn_90d": 496,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "sold_tracer.py": {
+      "churn_90d": 187,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "tests/conftest.py": {
+      "churn_90d": 7,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "tests/test_batch.py": {
+      "churn_90d": 96,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "tests/test_dedupe.py": {
+      "churn_90d": 162,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "tests/test_export_pipeline.py": {
+      "churn_90d": 123,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "tests/test_filter.py": {
+      "churn_90d": 154,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "tests/test_index_engine.py": {
+      "churn_90d": 374,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "tests/test_index_v3.py": {
+      "churn_90d": 239,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "tests/test_phase3_extraction.py": {
+      "churn_90d": 178,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "tests/test_references.py": {
+      "churn_90d": 226,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "tests/test_scraper_ingest.py": {
+      "churn_90d": 149,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "tests/test_sold_and_signals.py": {
+      "churn_90d": 221,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "web/check_contract.ts": {
+      "churn_90d": 232,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "web/check_drift.ts": {
+      "churn_90d": 182,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "web/routes/api-watch-listings.ts": {
+      "churn_90d": 182,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    },
+    "web/routes/api-watch-references.ts": {
+      "churn_90d": 71,
+      "commits_90d": 1,
+      "hotfix_touches_365d": 0,
+      "open_bugs": [],
+      "last_incident": null
+    }
+  },
+  "recent_hotfix_paths": []
+}
