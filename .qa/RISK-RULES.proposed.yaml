@@ -1,0 +1,133 @@
+# PROPOSED risk banding for sg-luxury-watch-index.
+#
+# Proposed, not applied. Phase 0 of the build spec requires a human to sign off
+# on banding before it governs anything — a risk model nobody agreed to produces
+# confident verdicts nobody trusts.
+#
+# To adopt: review, edit, then rename this file over .qa/RISK-RULES.yaml.
+#
+# Derived from the real repository layout, not from the kit's placeholder globs.
+version: 1
+
+rules:
+  # This project's "money" is not payments — it is the published price index.
+  # A wrong number here is the product being wrong, which is the closest thing
+  # to a financial defect the codebase has.
+  - if:
+      paths: ["index/index_engine.py", "index/signals.py", "migrations/**"]
+    band: critical
+    why: "the price index itself, the signals derived from it, and irreversible schema change"
+
+  - if:
+      paths: ["index/**", "parser/dedupe.py", "parser/references.py"]
+    band: high
+    why: "export pipeline and reference grouping — errors here silently corrupt every downstream price"
+
+  - if:
+      paths: ["scraper/**", "parser/**", "sold_tracer.py", "pipeline.py"]
+    band: high
+    why: "ingestion; bad input propagates into the index and is hard to detect after the fact"
+
+  - if:
+      paths: ["web/**"]
+      lines_changed: ">50"
+    band: high
+    why: "the public surface, and where the FE/BE contract can drift"
+
+  - if:
+      paths: ["**/*.md", "ops/**", "**/*.css"]
+      only: true
+    band: low
+    why: "no production behaviour can change"
+
+  - if:
+      lines_changed: "<20"
+      files_changed: "<3"
+    band: medium
+
+  - default: medium
+
+escalators:
+  - no_covering_test_for_changed_file
+  - deletes_or_alters_a_db_migration
+  - changes_a_public_api_signature
+  - touches_a_file_with_open_S1_or_S2_bug
+
+# Where G2 applies. Python only — web/ is TypeScript and has no mutation tool
+# configured here, so it is reported rather than gated.
+mutation_paths:
+  - "index/**/*.py"
+  - "parser/**/*.py"
+  - "scraper/**/*.py"
+  - "*.py"
+  - "!tests/**"
+  - "!migrations/**"        # one-shot scripts; mutants are mostly equivalent
+
+gates:
+  mutation_threshold: 0.60
+  mutation_wall_clock_seconds: 900
+  oracle_min_propositions:
+    critical: 8
+    high: 5
+    medium: 3
+    low: 0
+  oracle_citation_rate_floor: 0.70
+  pr_budget_usd: 8.00
+  pr_budget_usd_by_band:
+    low: 1.00
+    medium: 8.00
+    high: 25.00
+    critical: 50.00
+
+# §15 Q20, answered by the owner: "no bugs, no inaccuracies, no faulty logic,
+# no faulty math, no contradictions." A pure correctness definition — which
+# suits a numerical index unusually well.
+confidence_criteria:
+  - id: C1
+    name: faulty_math
+    evidence: mutation score against arithmetic and boundary mutators; median and
+      baseline behaviour in index_engine; outlier thresholds; SGD integer edges
+      (zero, negative, absurd highs like the existing 500 vs 16200 case)
+  - id: C2
+    name: faulty_logic
+    evidence: mutation score against conditional and branch mutators, especially
+      MIN_PER_BRAND gating and outlier flag conditions
+  - id: C3
+    name: contradictions
+    evidence: metamorphic relations — median is order-invariant, fill_series
+      preserves length, dedupe is idempotent, reference grouping is stable
+  - id: C4
+    name: inaccuracies
+    evidence: oracle propositions with citations to METHODOLOGY.md and
+      ARCHITECTURE.md; citation rate
+  - id: C5
+    name: bugs_generally
+    evidence: G1 fails-before/passes-after; the full suite ACTUALLY RUNNING in CI
+      (it did not before this change); the 44 skipped tests named explicitly
+
+# §15 Q17, answered: fast rollback, no feature flags or staged rollout.
+ship_with_watch_available: true
+
+rollback:
+  mechanism: redeploy_previous_version
+  typical_minutes: 5          # a guess — time a real rollback and correct it
+  granularity: whole_deploy
+  rollback_unsafe_paths:
+    - "migrations/**"
+    # A published index number that readers have already seen cannot be
+    # un-published by redeploying yesterday's code.
+    - "index/export_pipeline.py"
+    - "index/export_sheets.py"
+  rollback_unsafe_reasons:
+    schema: "an applied migration is not reverted by redeploying old code"
+    published: "an index figure already exported to Sheets or the site has been read; a rollback does not unsend it"
+
+routing:
+  low:      [risk-scout]
+  medium:   [risk-scout, spec-oracle, unit-smith, release-marshal]
+  high:     [risk-scout, spec-oracle, unit-smith, release-marshal]
+  critical: [risk-scout, spec-oracle, unit-smith, prober, release-marshal]
+  # flow-smith and authz-prober are omitted deliberately: there is no browser
+  # e2e harness here, and no multi-user auth surface for an authz matrix to
+  # cover. Add them when those exist rather than routing to agents that would
+  # have nothing to do.

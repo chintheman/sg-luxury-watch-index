@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Adapter template. Copy to .qa/adapters/<name>.sh and fill in.
+#
+# Every function starts as a hard failure on purpose. An adapter that returns 0
+# from an unimplemented function turns its gate into a rubber stamp, which is
+# exactly the vacuous-pass failure mode P5 exists to prevent. Delete the
+# `qa_unimplemented` line only when you have actually implemented the function.
+
+QA_ADAPTER_NAME="custom"
+
+qa_unimplemented() { echo "adapter '$QA_ADAPTER_NAME': ${1} is not implemented" >&2; return 90; }
+
+qa_test_all()    { qa_unimplemented qa_test_all; }
+qa_test_files()  { qa_unimplemented qa_test_files; }
+qa_test_ids()    { qa_unimplemented qa_test_ids; }
+qa_mutation()    { qa_unimplemented qa_mutation; }
+qa_vacuity()     { qa_unimplemented qa_vacuity; }
+qa_coverage()    { qa_unimplemented qa_coverage; }
+qa_route_inventory() { qa_unimplemented qa_route_inventory; }
+# Optional; omit entirely if the stack cannot support worktree isolation.
+# qa_bootstrap_worktree() { qa_unimplemented qa_bootstrap_worktree; }

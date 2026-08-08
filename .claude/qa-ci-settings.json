@@ -1,0 +1,30 @@
+{
+  "$comment": [
+    "Explicit settings for CI runs (spec §8). Passed as --settings so hooks and",
+    "permissions load without --bare, which would skip every enforcement",
+    "mechanism in §5 and §11 precisely where no human is watching.",
+    "",
+    "One guard serves all agents: the PreToolUse payload carries agent_type on",
+    "this CLI, so qa-guard.py adjudicates per-agent from .qa/policy.yaml.",
+    "See .qa/DECISIONS.md D-002. Per-agent tool scoping is ALSO applied via",
+    "--tools/--disallowedTools at dispatch: the hook is the backstop, not the",
+    "only lock."
+  ],
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|NotebookEdit|MultiEdit|Read|Grep|Glob|WebFetch|Bash",
+        "hooks": [
+          { "type": "command", "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/qa-guard.sh" }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "deny": [
+      "Bash(git push:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(rm -rf /*)"
+    ]
+  }
+}

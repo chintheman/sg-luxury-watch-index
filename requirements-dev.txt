@@ -1,0 +1,4 @@
+-r requirements.txt
+pytest>=8.0
+# Mutation testing for the QA team's G2 gate.
+mutmut>=2.4

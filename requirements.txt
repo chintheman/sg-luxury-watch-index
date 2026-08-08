@@ -1,0 +1,4 @@
+# Runtime dependencies. Absent until now, which is why CI could not import
+# scraper/scraper.py and the whole suite failed at collection.
+requests>=2.31
+beautifulsoup4>=4.12

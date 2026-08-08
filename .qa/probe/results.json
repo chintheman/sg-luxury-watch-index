@@ -1,0 +1,152 @@
+{
+  "cli_version": "2.1.226 (Claude Code)",
+  "live_probes_run": true,
+  "generated": "2026-08-08T16:51:46Z",
+  "checks": [
+    {
+      "mechanism": "cli-flag --settings",
+      "status": "PASS",
+      "detail": "accepted by parser; documented"
+    },
+    {
+      "mechanism": "cli-flag --allowedTools",
+      "status": "PASS",
+      "detail": "accepted by parser; documented"
+    },
+    {
+      "mechanism": "cli-flag --disallowedTools",
+      "status": "PASS",
+      "detail": "accepted by parser; documented"
+    },
+    {
+      "mechanism": "cli-flag --permission-mode",
+      "status": "PASS",
+      "detail": "accepted by parser; documented"
+    },
+    {
+      "mechanism": "cli-flag --max-turns",
+      "status": "PASS",
+      "detail": "accepted by parser; UNDOCUMENTED (hidden flag)"
+    },
+    {
+      "mechanism": "cli-flag --output-format",
+      "status": "PASS",
+      "detail": "accepted by parser; documented"
+    },
+    {
+      "mechanism": "cli-flag --model",
+      "status": "PASS",
+      "detail": "accepted by parser; documented"
+    },
+    {
+      "mechanism": "cli-flag --max-budget-usd",
+      "status": "PASS",
+      "detail": "accepted by parser; documented"
+    },
+    {
+      "mechanism": "bare-skips-hooks",
+      "status": "PASS",
+      "detail": "--bare documented as skipping hooks; §8 ban stands"
+    },
+    {
+      "mechanism": "frontmatter-string disallowedTools",
+      "status": "PASS",
+      "detail": "string present in binary (corroborating)"
+    },
+    {
+      "mechanism": "frontmatter-string permissionMode",
+      "status": "PASS",
+      "detail": "string present in binary (corroborating)"
+    },
+    {
+      "mechanism": "frontmatter-string maxTurns",
+      "status": "PASS",
+      "detail": "string present in binary (corroborating)"
+    },
+    {
+      "mechanism": "frontmatter-string memory",
+      "status": "PASS",
+      "detail": "string present in binary (corroborating)"
+    },
+    {
+      "mechanism": "frontmatter-string isolation",
+      "status": "PASS",
+      "detail": "string present in binary (corroborating)"
+    },
+    {
+      "mechanism": "frontmatter-string effort",
+      "status": "PASS",
+      "detail": "string present in binary (corroborating)"
+    },
+    {
+      "mechanism": "frontmatter-string mcpServers",
+      "status": "PASS",
+      "detail": "string present in binary (corroborating)"
+    },
+    {
+      "mechanism": "agent-frontmatter",
+      "status": "PASS",
+      "detail": "all §7.1 fields accepted; agent dispatched"
+    },
+    {
+      "mechanism": "per-agent hooks: frontmatter",
+      "status": "FAIL",
+      "detail": "did NOT fire — use the settings-hook fallback (verified below)"
+    },
+    {
+      "mechanism": "settings hooks over subagents",
+      "status": "PASS",
+      "detail": "hook intercepted a subagent's Read — G5/P2 enforceable"
+    },
+    {
+      "mechanism": "hook payload agent_type",
+      "status": "PASS",
+      "detail": "present (agent_type=probe-fields) — one agent-aware guard suffices"
+    },
+    {
+      "mechanism": "--tools restricts surface",
+      "status": "PASS",
+      "detail": "Bash unavailable under --tools Read"
+    },
+    {
+      "mechanism": "--disallowedTools denies",
+      "status": "PASS",
+      "detail": "Bash denied"
+    },
+    {
+      "mechanism": "allowlist positive control",
+      "status": "PASS",
+      "detail": "Bash ran when allowlisted — the negatives above are real"
+    },
+    {
+      "mechanism": "dontAsk does not auto-grant",
+      "status": "PASS",
+      "detail": "dontAsk alone does not grant Bash; the allowlist still governs"
+    },
+    {
+      "mechanism": "path-scoped Write guard",
+      "status": "PASS",
+      "detail": "write blocked outside the allowed path"
+    },
+    {
+      "mechanism": "Stop hook",
+      "status": "PASS",
+      "detail": "fired; in-session fast feedback available"
+    },
+    {
+      "mechanism": "isolation: worktree",
+      "status": "PASS",
+      "detail": "supported and repo is git; verify e2e in Phase 2 with bootstrap"
+    },
+    {
+      "mechanism": "cost in json output (G6)",
+      "status": "PASS",
+      "detail": "total_cost_usd present (probe turn: $0.0096309)"
+    }
+  ],
+  "summary": {
+    "pass": 27,
+    "fail": 1,
+    "skip": 0
+  }
+}

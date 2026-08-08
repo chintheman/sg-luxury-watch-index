@@ -17,3 +17,39 @@ venv/
 # Environment
 .env
 .env.local
+# Agent run artifacts: traces, HARs, screenshots. Large, binary, and only useful
+# while a specific failure is being diagnosed (spec §4).
+.qa/artifacts/
+
+# Scratch from mutation runs
+.qa/metrics/mutation.json
+.stryker-tmp/
+.mutmut-cache
+
+# Local-only gate output
+.qa/metrics/gates/*-local.json
+.qa/metrics/cost/local*.json
+.qa/risk/local.json
+.qa/reports/local.*
+
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+coverage/
+
+# Self-test and debug residue — gate results for real PRs are committed, these are not
+.qa/metrics/gates/*selftest*.json
+.qa/metrics/gates/*-dbg.json
+.qa/metrics/violations/selftest*.jsonl
+
+# Local-session violation log. Violations recorded against a real PR ARE
+# committed — G5 treats a rising count as evidence that an agent's prompt is
+# fighting its permissions. The local-session file is just noise from
+# interactive work and would bury that signal.
+.qa/metrics/violations/local.jsonl
+
+# Per-install recon output from /qa-init — regenerated on demand, and specific
+# to whichever repository the kit was installed into.
+.qa/INIT-REPORT.md
+.qa/init-report.json
