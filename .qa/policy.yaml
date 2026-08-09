@@ -1,65 +1,89 @@
 # Separation-of-duties policy (spec §4 P4, enforced by G5).
 #
-# This file IS the P4 table. `.claude/hooks/qa-guard.sh` reads it on every
-# PreToolUse call and adjudicates by the calling agent's `agent_type`.
+# This file IS the P4 table. The guard hook reads it on every PreToolUse call
+# and adjudicates by the calling agent's `agent_type`.
 #
 # Semantics:
 #   write_allow  — glob patterns this agent may create/modify. Empty list means
 #                  the agent may not write at all.
+#   read_allow   — if present, the agent may read ONLY these. Allow-list beats
+#                  deny-list here: a deny-list of directory names silently
+#                  fails open in any repo that names things differently.
 #   read_deny    — patterns this agent may NOT read, via ANY content-returning
-#                  tool (Read, Grep, Glob, WebFetch). §7.2 exists because
-#                  blocking Read alone is not enough.
+#                  tool (Read, Grep, Glob, WebFetch).
 #   url_deny     — substrings that, if present in a WebFetch URL, are blocked.
 #   bash_deny    — regexes matched against the full Bash command.
 #
-# An agent_type absent from this file is DENIED any write. Fail closed: an
-# unknown agent is an unreviewed agent.
+# An agent_type absent from this file is DENIED any write. Fail closed.
 
 defaults:
-  # Applies to every agent, and to the orchestrator (main session).
-  # G4: snapshot laundering. An agent that CAN run --update-snapshots WILL (P8).
+  # Snapshot laundering (P8/G4). Every pattern is anchored to a TEST RUNNER.
+  #
+  # A bare `-u` lived here originally and it was a disaster: it blocked
+  # `git push -u`, `sort -u` and `pip install -U`, none of which have anything
+  # to do with snapshots. A gate that fires on innocent commands trains people
+  # to route around it, and a gate people route around is worse than no gate.
   bash_deny:
-    - '(^|\s)(-u|--update-snapshot|--updateSnapshot|--update-snapshots|-U)(\s|$)'
-    - 'jest\s+.*(-u|--updateSnapshot)'
-    - 'vitest\s+.*(-u|--update)'
-    - 'playwright\s+.*--update-snapshots'
-    - 'pytest\s+.*--snapshot-update'
-    - 'cargo\s+insta\s+accept'
-    # Nothing may rewrite the policy or the gates from inside a session.
-    - '\.qa/(policy\.yaml|gates/|RISK-RULES\.yaml)'
+    - '\b(jest|vitest)\b[^|;]*\s(-u|--update|--updateSnapshot)(\s|$)'
+    - '\bplaywright\b[^|;]*--update-snapshots'
+    - '\bpytest\b[^|;]*--snapshot-update'
+    - '\bcargo\s+insta\s+accept\b'
+    - '\bava\b[^|;]*--update-snapshots'
+
+  # Enforced on the tool's TARGET PATH, never by matching command text. Text
+  # matching blocked reading, grepping and even *running* the gates.
   write_deny_always:
     - ".qa/policy.yaml"
+    - ".claude/hooks/**"
+
+  # Immutable to AGENTS, editable by the orchestrator. Redundant in practice —
+  # agents are confined by write_allow and none of these appear there — but kept
+  # explicit so the intent survives an edit to the allow-lists.
+  agent_write_deny:
     - ".qa/gates/**"
     - ".qa/RISK-RULES.yaml"
-    - ".claude/hooks/**"
     - ".claude/qa-settings/**"
     - ".github/workflows/**"
 
 agents:
 
-  # --- Analysts: may write only their own .qa/ subdirectory -----------------
   risk-scout:
     write_allow: [".qa/risk/**"]
 
   spec-oracle:
     write_allow: [".qa/oracles/**"]
-    # P2 is the whole reason this agent exists as a separate process. It must
-    # never see the implementation, the diff, or even the changed-file LIST —
-    # a file list is itself implementation information (§3.2).
+    # P2. The previous version denied src/, lib/ and app/ — none of which exist
+    # here. The oracle could read index/, parser/ and scraper/ freely while the
+    # Confidence Report still asserted blindness: a fail-open default, worse
+    # than no defence because it is indistinguishable from a working one.
+    #
+    # Now an allow-list. ARCHITECTURE.md and METHODOLOGY.md remain readable on
+    # purpose — they are this project's specification.
+    read_allow:
+      - "README*"
+      - "docs/**"
+      - "doc/**"
+      - "**/*.md"
+      - "openapi.*"
+      - "swagger.*"
+      - "**/*.graphql"
+      - "**/schema.json"
+      - ".qa/oracles/**"
+      - ".qa/charters/**"
     read_deny:
-      - "src/**"
-      - "lib/**"
-      - "app/**"
-      - "packages/*/src/**"
-      - "tests/**"
-      - "test/**"
-      - "**/*.test.*"
-      - "**/*.spec.*"
-      - ".qa/risk/**"
+      # By file extension, not directory name, so a new source folder cannot
+      # quietly escape the rule.
+      - "**/*.py"
+      - "**/*.ts"
+      - "**/*.tsx"
+      - "**/*.js"
+      - "**/*.jsx"
+      - "**/*.sql"
       - "**/*.diff"
       - "**/*.patch"
+      - ".qa/risk/**"
     url_deny:
-      - "/pull/"          # a PR URL returns the diff
+      - "/pull/"
       - "/commit/"
       - "/compare/"
       - ".diff"
@@ -67,47 +91,46 @@ agents:
       - "/blob/"
       - "/raw/"
     bash_deny:
-      - '^\s*git\s+(diff|show|log|blame)'   # the diff by another route
+      - '^\s*git\s+(diff|show|log|blame)'
       - '^\s*(cat|head|tail|sed|awk|less)\b'
 
   prober:
-    # Writes findings only. Never tests, never source (§3.8).
     write_allow: [".qa/sessions/**", ".qa/bugs/**", ".qa/charters/**", ".qa/artifacts/**"]
 
   authz-prober:
     write_allow: [".qa/authz-matrix.yaml", ".qa/bugs/**", ".qa/reports/authz-**"]
 
-  # --- Test authors: tests and their own reports; never source (P4) ---------
   unit-smith:
-    write_allow: ["tests/**", "test/**", "**/*.test.*", "**/*.spec.*", "spec/**",
+    write_allow: ["tests/**", "**/*.test.*", "**/*.spec.*",
                   ".qa/reports/unit-smith-**", ".qa/disputes/**"]
 
   flow-smith:
     write_allow: ["tests/**", "e2e/**", "**/*.spec.ts", ".qa/plans/**",
                   ".qa/reports/flow-smith-**", ".qa/artifacts/**"]
 
-  # --- Fixer: source only; explicitly NOT tests (P4) ------------------------
-  # This is the single most important row. The dominant path to a meaningless
-  # test is: agent writes test -> test fails -> same agent "fixes" it by
-  # loosening the assertion. patch-smith cannot touch a test at all.
+  # The load-bearing row: the agent that fixes code may not edit the test that
+  # judges the fix.
   patch-smith:
-    write_allow: ["src/**", "lib/**", "app/**", "packages/*/src/**"]
+    # This project has no src/. Without these entries patch-smith could write
+    # nothing at all, and an agent that cannot do its job lobbies to have the
+    # constraint removed — §7.1's predicted failure.
+    write_allow: ["index/**", "parser/**", "scraper/**", "web/**",
+                  "pipeline.py", "run_filter.py", "sold_tracer.py"]
     write_deny:
       - "tests/**"
-      - "test/**"
       - "**/*.test.*"
       - "**/*.spec.*"
+      - "**/conftest.py"
+      - "migrations/**"        # applied migrations are not reversible by a deploy
       - ".qa/reports/**"
-    # P7: no retrieving the answer. No history mining, no upstream lookup.
+    # P7: no retrieving the answer.
     bash_deny:
       - '^\s*git\s+(log|show|blame|fetch|pull)'
       - '^\s*(curl|wget)\b'
     url_deny: ["github.com", "gitlab.com", "stackoverflow.com"]
 
-  # --- Build cop ------------------------------------------------------------
   flake-warden:
     write_allow: [".qa/flakes.json", ".qa/reports/nightly-**", ".qa/quarantine.yaml"]
 
-  # --- Marshal: reports only. No code, ever. --------------------------------
   release-marshal:
     write_allow: [".qa/reports/**", ".qa/metrics/verdicts/**"]
