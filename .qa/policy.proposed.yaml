@@ -1,0 +1,152 @@
+# PROPOSED separation-of-duties policy for sg-luxury-watch-index.
+#
+# Proposed, not applied — `.qa/policy.yaml` is immutable from inside a session
+# by its own `write_deny_always` rule, and that rule is correct: an agent must
+# not edit the referee mid-game. A human adopts this:
+#
+#     mv .qa/policy.proposed.yaml .qa/policy.yaml
+#
+# Two classes of defect in the shipped policy this corrects.
+#
+# ---- 1. The snapshot rule over-matched, and blocked ordinary work -----------
+#
+# `(^|\s)(-u|-U)(\s|$)` was matched against the whole command string, for every
+# caller including the main session. It therefore blocked:
+#
+#     git push -u origin <branch>     <- the push command this repo mandates
+#     sort -u                          pip install -U
+#
+# The intent is to stop a test runner rewriting snapshots, so the pattern is now
+# anchored to a test runner appearing earlier in the same command.
+#
+# ---- 2. The referee rule blocked reading, not just writing -----------------
+#
+# `\.qa/(policy\.yaml|gates/|RISK-RULES\.yaml)` matched ANY command mentioning
+# those paths, so `ls .qa/gates/` and `grep ... RISK-RULES.yaml` were denied —
+# and, self-defeatingly, so was every attempt to RUN a gate:
+#
+#     bash .qa/gates/g3-vacuity.sh    -> BLOCKED
+#
+# The gates could not be executed by the orchestrator, by any agent, or by CI
+# through a session. Writes are already prevented by `write_deny_always`, which
+# is tool-level and cannot be talked around, so the bash rule now targets only
+# the shell verbs that actually mutate a file.
+#
+# ---- 3. The path globs described a repository this is not -------------------
+#
+# Every glob referred to `src/`, `lib/`, `app/`, `packages/*/src/`. None exist
+# here. Consequences: patch-smith could write no file that exists (its role was
+# inert), and spec-oracle's read_deny covered nothing, so P2 oracle blindness —
+# the one principle that agent exists to enforce — did not hold. That failure
+# was OPEN, which is the direction that matters. Globs below are this repo's.
+
+defaults:
+  bash_deny:
+    # G4/P8: snapshot laundering. Anchored to a test runner so it stops
+    # `vitest -u` without stopping `git push -u`.
+    - '\b(jest|vitest|playwright|pytest|ava|mocha|npx\s+jest|npx\s+vitest)\b[^;&|]*\s(-u|-U)(\s|$)'
+    - '\b(jest|vitest|playwright|pytest|ava|mocha)\b[^;&|]*--(update-snapshots?|updateSnapshot|snapshot-update)'
+    - 'cargo\s+insta\s+accept'
+    # Mutating the referee from a shell. Reading and executing stay allowed —
+    # a gate you cannot run is not a gate.
+    - '\b(tee|truncate|dd|shred)\b[^;&|]*\.qa/(policy\.yaml|gates/|RISK-RULES\.yaml)'
+    - '\bsed\b[^;&|]*-i[^;&|]*\.qa/(policy\.yaml|gates/|RISK-RULES\.yaml)'
+    - '\b(mv|cp|rm|ln)\b[^;&|]*\.qa/(policy\.yaml|gates/|RISK-RULES\.yaml)'
+    - '>>?\s*\.qa/(policy\.yaml|gates/|RISK-RULES\.yaml)'
+    - '\b(tee|sed|mv|cp|rm|ln|truncate)\b[^;&|]*\.claude/hooks/'
+    - '>>?\s*\.claude/hooks/'
+  write_deny_always:
+    - ".qa/policy.yaml"
+    - ".qa/gates/**"
+    - ".qa/RISK-RULES.yaml"
+    - ".claude/hooks/**"
+    - ".claude/qa-settings/**"
+    - ".github/workflows/**"
+
+agents:
+
+  # --- Analysts: may write only their own .qa/ subdirectory -----------------
+  risk-scout:
+    write_allow: [".qa/risk/**"]
+
+  spec-oracle:
+    write_allow: [".qa/oracles/**"]
+    # P2. These are THIS repository's implementation paths. The previous list
+    # named src/, lib/ and app/, so spec-oracle could read index/index_engine.py
+    # — the price index — and encode its current behaviour as intended.
+    read_deny:
+      - "index/**"
+      - "parser/**"
+      - "scraper/**"
+      - "ops/**"
+      - "migrations/**"
+      - "web/**"
+      - "pipeline.py"
+      - "sold_tracer.py"
+      - "run_filter.py"
+      - "tests/**"
+      - "**/*.test.*"
+      - "**/*.spec.*"
+      - ".qa/risk/**"
+      - "**/*.diff"
+      - "**/*.patch"
+    url_deny:
+      - "/pull/"
+      - "/commit/"
+      - "/compare/"
+      - ".diff"
+      - ".patch"
+      - "/blob/"
+      - "/raw/"
+    bash_deny:
+      - '^\s*git\s+(diff|show|log|blame)'
+      - '^\s*(cat|head|tail|sed|awk|less)\b'
+
+  prober:
+    write_allow: [".qa/sessions/**", ".qa/bugs/**", ".qa/charters/**", ".qa/artifacts/**"]
+
+  authz-prober:
+    write_allow: [".qa/authz-matrix.yaml", ".qa/bugs/**", ".qa/reports/authz-**"]
+
+  # --- Test authors: tests and their own reports; never source (P4) ---------
+  unit-smith:
+    write_allow: ["tests/**", ".qa/fixtures/**",
+                  ".qa/reports/unit-smith-**", ".qa/disputes/**"]
+
+  flow-smith:
+    write_allow: ["tests/**", "e2e/**", "**/*.spec.ts", ".qa/plans/**",
+                  ".qa/reports/flow-smith-**", ".qa/artifacts/**"]
+
+  # --- Fixer: source only; explicitly NOT tests (P4) ------------------------
+  patch-smith:
+    # Previously src/**, lib/**, app/** — none of which exist here, so this
+    # agent could not write a single file in the repository.
+    write_allow:
+      - "index/**"
+      - "parser/**"
+      - "scraper/**"
+      - "ops/**"
+      - "web/**"
+      - "pipeline.py"
+      - "sold_tracer.py"
+      - "run_filter.py"
+    write_deny:
+      # migrations/ is deliberately absent from write_allow AND named here:
+      # RISK-RULES lists it as rollback-unsafe, so a fix there is a human's call.
+      - "migrations/**"
+      - "tests/**"
+      - "**/*.test.*"
+      - "**/*.spec.*"
+      - ".qa/reports/**"
+    bash_deny:
+      - '^\s*git\s+(log|show|blame|fetch|pull)'
+      - '^\s*(curl|wget)\b'
+    url_deny: ["github.com", "gitlab.com", "stackoverflow.com"]
+
+  # --- Build cop ------------------------------------------------------------
+  flake-warden:
+    write_allow: [".qa/flakes.json", ".qa/reports/nightly-**", ".qa/quarantine.yaml"]
+
+  # --- Marshal: reports only. No code, ever. --------------------------------
+  release-marshal:
+    write_allow: [".qa/reports/**", ".qa/metrics/verdicts/**"]

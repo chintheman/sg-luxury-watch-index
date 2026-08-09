@@ -25,6 +25,11 @@ venv/
 .qa/metrics/mutation.json
 .stryker-tmp/
 .mutmut-cache
+# mutmut 3 copies the source tree here to mutate it, and the adapter writes a
+# temporary [mutmut] config it restores afterwards. Neither belongs in git.
+mutants/
+.qa/.setup.cfg.qa-backup
+.qa/metrics/mutmut-run.log
 
 # Local-only gate output
 .qa/metrics/gates/*-local.json

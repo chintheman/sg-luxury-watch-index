@@ -1,4 +1,17 @@
 -r requirements.txt
 pytest>=8.0
+
+# Read by .claude/hooks/qa-guard.py, scripts/qa-orchestrate.sh and the G2/G7
+# gates. It was previously undeclared: the guard fails CLOSED when it cannot
+# parse .qa/policy.yaml, so on a clean checkout without PyYAML every Bash and
+# Write call in the session is denied and the repo looks broken.
+PyYAML>=6.0
+
 # Mutation testing for the QA team's G2 gate.
+#
+# mutmut 2 and 3 share no common invocation — 3 dropped `--paths-to-mutate` and
+# moved all scoping into setup.cfg/pyproject.toml. The adapter detects the major
+# version and speaks whichever is installed, so this stays unpinned; note that
+# mutmut 2.x no longer builds on Python 3.11+ (its glob2 dependency fails), so
+# in practice this resolves to 3.x.
 mutmut>=2.4
