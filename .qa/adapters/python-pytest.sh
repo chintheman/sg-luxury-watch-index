@@ -106,12 +106,20 @@ else:
             dirs.add(entry)
     dirs = sorted(dirs)
 
+# Root-level modules (sold_tracer.py, pipeline.py, ...) belong to no package
+# directory, so no source_paths entry covers them — but the suite imports them,
+# and an uncopied import is a collection error that aborts the whole run.
+# also_copy places them in the sandbox without mutating them.
+also = sorted(n for n in os.listdir(".") if n.endswith(".py") and os.path.isfile(n))
+
 def block(key, values):
     return key + "=" + "\n    ".join(values)
 
 print("[mutmut]")
 print(block("source_paths", dirs))
 print(block("only_mutate", files))
+if also:
+    print(block("also_copy", also))
 PY
 
   local log="$QA_ROOT/.qa/metrics/mutmut-run.log"

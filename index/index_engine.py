@@ -651,9 +651,26 @@ def build_indices():
         if opposers:
             parts.append(f"with {', '.join(opposers)} pulling the other way")
         insights["composite"] = ". ".join(parts) + "."
-    elif latest["value"] and prev_day_idx["value"]:
-        dir_word = "up" if latest["value"] > prev_day_idx["value"] else "down"
-        insights["composite"] = f"SG-LWIX moved {dir_word} {abs(chg_1d_pct):.1f}% today across all tracked brands."
+    elif latest["value"] is not None:
+        # No per-brand decomposition available — either the series has a single
+        # date, or the last two days share no brand that qualified on both.
+        # Report the move without attributing it.
+        #
+        # This branch used to read `prev_day_idx["value"]`, a name that exists
+        # nowhere in the module, so every build that reached it died with
+        # NameError *after* writing data/index.json: the file looked fine and
+        # the job exited non-zero. A single-date corpus reaches it immediately.
+        if chg_1d_pct > 0:
+            insights["composite"] = f"SG-LWIX moved up {chg_1d_pct:.1f}% today across all tracked brands."
+        elif chg_1d_pct < 0:
+            insights["composite"] = f"SG-LWIX moved down {abs(chg_1d_pct):.1f}% today across all tracked brands."
+        else:
+            insights["composite"] = "SG-LWIX held flat today across all tracked brands."
+    else:
+        insights["composite"] = (
+            f"SG-LWIX has no computed value yet: no day has reached "
+            f"{MIN_BRANDS_PER_COMPOSITE} qualifying brands."
+        )
 
     if cond_spread is not None:
         insights["condition"] = (
@@ -747,8 +764,13 @@ def build_indices():
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(output, indent=2, default=str))
 
+    # A corpus that never reaches MIN_BRANDS_PER_COMPOSITE on any day leaves
+    # every composite point None. That is a legitimate outcome — say so — but
+    # formatting None with :.4f raised TypeError here, again only AFTER the
+    # output file had been written.
+    latest_str = f"{latest['value']:.4f}" if latest["value"] is not None else "N/A (no qualifying day)"
     print(f"\n{'='*60}")
-    print(f"  SG-LWIX: {latest['value']:.4f}  ({chg_1d:+.4f}/day, {chg_1d_pct:+.2f}%)")
+    print(f"  SG-LWIX: {latest_str}  ({chg_1d:+.4f}/day, {chg_1d_pct:+.2f}%)")
     print(f"  Anchor: {anchor_date}  |  Days tracked: {len(composite)}")
     print(f"  Brands baselined: {len(baseline_median)}/{len(all_brands)}")
     print(f"  Pre-Owned: {po_latest or 'N/A'}  |  NEW: {new_latest or 'N/A'}")
