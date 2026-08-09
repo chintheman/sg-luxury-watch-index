@@ -514,3 +514,381 @@ def test_anchor_date_is_the_first_date_half_the_baselined_brands_have_appeared(t
     first_date = output["composite"]["series"][0]["date"]
 
     assert output["meta"]["anchor_date"] == first_date
+
+
+# ── Change horizons (val_at_date) ─────────────────────────────────────────
+
+def flat_market_over(days_ago_list):
+    """Three brands, three listings per date, every price cycling around the
+    same median. Every unit's window median equals its baseline on every date,
+    so the composite is 1.0 throughout and every horizon change is zero."""
+    c = Corpus()
+    for d in days_ago_list:
+        for brand, base in (("Rolex", 16000), ("Omega", 5000), ("Cartier", 8000)):
+            for delta in (-10, 0, 10):
+                c.listing(brand, base + delta, d)
+    return c
+
+
+def test_a_flat_market_reports_zero_change_over_every_horizon(tmp_path, monkeypatch):
+    # 16 dates spanning 120 days, so the 7-, 30- and 90-day lookbacks all
+    # resolve to a real earlier point rather than falling off the series.
+    c = flat_market_over(list(range(120, -1, -8)))
+
+    output = run(c, tmp_path, monkeypatch)
+    comp = output["composite"]
+
+    assert comp["current"] == 1.0
+    for horizon in ("change_1d", "change_7d", "change_30d", "change_90d"):
+        assert comp[horizon] == 0, f"{horizon} should be flat"
+    for horizon in ("change_1d_pct", "change_7d_pct", "change_30d_pct", "change_90d_pct"):
+        assert comp[horizon] == 0, f"{horizon} should be flat"
+
+
+def test_horizons_beyond_the_series_report_none(tmp_path, monkeypatch):
+    # Every point is inside the last week, so even the 7-day lookback has no
+    # earlier point to land on and must report None rather than reusing the
+    # first value it can find.
+    c = flat_market_over([5, 4, 3, 2])
+
+    output = run(c, tmp_path, monkeypatch)
+    comp = output["composite"]
+
+    assert comp["change_7d"] is None
+    assert comp["change_30d"] is None
+    assert comp["change_90d"] is None
+
+
+def test_days_since_fresh_is_zero_when_the_final_day_computed(tmp_path, monkeypatch):
+    output = run(three_brands_at_baseline(), tmp_path, monkeypatch)
+
+    assert output["composite"]["stale"] is False
+    assert output["composite"]["days_since_fresh"] == 0
+
+
+# ── Brand sub-indices ─────────────────────────────────────────────────────
+
+def test_brand_subindices_sit_at_one_when_each_brand_is_at_its_baseline(tmp_path, monkeypatch):
+    output = run(three_brands_at_baseline(), tmp_path, monkeypatch)
+    subs = output["brand_subindices"]
+
+    assert set(subs) == {"Rolex", "Omega", "Cartier"}
+    for brand, sub in subs.items():
+        assert sub["current"] == 1.0, brand
+
+
+def test_brand_subindices_are_capped_at_the_top_five_by_volume(tmp_path, monkeypatch):
+    # Seven brands, descending volume. Only the five largest get a sub-index.
+    c = Corpus()
+    volumes = [("Rolex", 16000, 10), ("Omega", 5000, 9), ("Cartier", 8000, 8),
+               ("Tudor", 4000, 7), ("Breitling", 6000, 6), ("Panerai", 7000, 5),
+               ("Hublot", 12000, 4)]
+    for brand, base, n in volumes:
+        for i in range(n):
+            c.listing(brand, base + i, 9)
+
+    output = run(c, tmp_path, monkeypatch)
+
+    assert set(output["brand_subindices"]) == {"Rolex", "Omega", "Cartier", "Tudor", "Breitling"}
+
+
+def test_brand_subindices_skip_a_brand_with_no_baseline(tmp_path, monkeypatch):
+    # Tudor has two listings — below MIN_BASELINE_SAMPLES — so it never gets a
+    # baseline, and a sub-index measured against nothing must not be published
+    # even though its volume puts it inside the top five.
+    c = three_brands_at_baseline()
+    c.listing("Tudor", 4000, 9)
+    c.listing("Tudor", 4001, 8)
+
+    output = run(c, tmp_path, monkeypatch)
+
+    assert "Tudor" not in output["brand_subindices"]
+
+
+# ── Published-list truncation ─────────────────────────────────────────────
+
+def test_brand_contributions_are_truncated_to_eight(tmp_path, monkeypatch):
+    brands = [("Rolex", 16000), ("Omega", 5000), ("Cartier", 8000), ("Tudor", 4000),
+              ("Breitling", 6000), ("Panerai", 7000), ("Hublot", 12000),
+              ("Zenith", 5500), ("Chopard", 9000), ("Longines", 2000)]
+    c = Corpus()
+    for i, (brand, base) in enumerate(brands):
+        for j in range(4):
+            c.listing(brand, base + j, 9)
+        for j in range(4):
+            c.listing(brand, base + 200 + i * 10 + j, 8)
+
+    output = run(c, tmp_path, monkeypatch)
+
+    assert len(output["brand_contributions"]) == 8
+    # The full total still reflects every brand, not just the published eight.
+    assert output["contributions_total"] != sum(
+        e["contribution"] for e in output["brand_contributions"]
+    )
+
+
+def test_price_outliers_are_truncated_to_two_hundred_but_counted_in_full(tmp_path, monkeypatch):
+    c = Corpus()
+    # 40 honest Rolex listings first, so the first-30 baseline sample is clean.
+    for i in range(40):
+        c.listing("Rolex", 16000 + i, 30 - (i % 20))
+    for brand, base in (("Omega", 5000), ("Cartier", 8000)):
+        for i in range(4):
+            c.listing(brand, base + i, 9)
+    # 201 junk prices, all far below Rolex's baseline, all on one later day.
+    for i in range(201):
+        c.listing("Rolex", 700 + i, 5)
+
+    output = run(c, tmp_path, monkeypatch)
+
+    assert output["price_outlier_count"] == 201
+    assert len(output["price_outliers"]) == 200
+
+
+# ── Insights ──────────────────────────────────────────────────────────────
+
+def test_condition_insight_quotes_the_spread(tmp_path, monkeypatch):
+    c = Corpus()
+    for brand, base in (("Rolex", 16000), ("Omega", 5000), ("Cartier", 8000)):
+        for i in range(4):
+            c.listing(brand, base + i, 9)
+        for i in range(2):
+            c.raw(f"{brand} Model BNIB Price: SGD ${base + 1000 + i}", 8)
+        for i in range(2):
+            c.raw(f"{brand} Model Preowned Price: SGD ${base - 500 + i}", 8)
+
+    output = run(c, tmp_path, monkeypatch)
+
+    spread = output["condition_indices"]["spread"]
+    assert f"{spread:+.4f}" in output["insights"]["condition"]
+
+
+def test_availability_insight_quotes_the_score(tmp_path, monkeypatch):
+    output = run(three_brands_at_baseline(), tmp_path, monkeypatch)
+
+    score = output["availability"]["current"]
+    assert f"Availability Score: {score}/100" in output["insights"]["availability"]
+
+
+def test_no_condition_insight_when_the_spread_cannot_be_computed(tmp_path, monkeypatch):
+    # Every listing is condition-unknown, so neither sub-index has a value and
+    # there is no spread to describe.
+    output = run(three_brands_at_baseline(), tmp_path, monkeypatch)
+
+    assert output["condition_indices"]["spread"] is None
+    assert "condition" not in output["insights"]
+
+
+def test_condition_index_ignores_brands_that_have_no_baseline(tmp_path, monkeypatch):
+    # Metamorphic: adding Brand New listings for a brand that never earned a
+    # baseline must leave the NEW sub-index exactly where it was.
+    def corpus():
+        c = Corpus()
+        for brand, base in (("Rolex", 16000), ("Omega", 5000), ("Cartier", 8000)):
+            for i in range(4):
+                c.listing(brand, base + i, 9)
+            for i in range(2):
+                c.raw(f"{brand} Model BNIB Price: SGD ${base + 1000 + i}", 8)
+        return c
+
+    without = run(corpus(), tmp_path, monkeypatch, name="without")
+
+    c = corpus()
+    for i in range(2):
+        c.raw(f"Tudor Model BNIB Price: SGD ${40000 + i}", 8)
+    with_unbaselined = run(c, tmp_path, monkeypatch, name="with")
+
+    assert with_unbaselined["condition_indices"]["new"]["current"] == \
+        without["condition_indices"]["new"]["current"]
+
+
+# ── The operator-facing summary ───────────────────────────────────────────
+# build_indices() prints a summary block that is the only feedback a scheduled
+# run gives. It is part of the contract with whoever reads the job log.
+
+def test_printed_summary_reports_the_headline_number(tmp_path, monkeypatch, capsys):
+    run(three_brands_at_baseline(), tmp_path, monkeypatch)
+
+    out = capsys.readouterr().out
+
+    assert "SG-LWIX: 1.0000" in out
+    assert "Brands baselined: 3/3" in out
+
+
+def test_printed_summary_says_so_when_there_is_no_qualifying_day(tmp_path, monkeypatch, capsys):
+    c = Corpus()
+    for brand, base in (("Rolex", 16000), ("Omega", 5000)):
+        for i in range(4):
+            c.listing(brand, base + i, 9 - i)
+
+    run(c, tmp_path, monkeypatch)
+    out = capsys.readouterr().out
+
+    assert "N/A (no qualifying day)" in out
+    assert "no day has reached 3 qualifying brands" in out
+
+
+# ── Window pooling is visible in the published counts ─────────────────────
+
+def test_total_listings_reports_the_pooled_window_not_the_single_day(tmp_path, monkeypatch):
+    # One listing per brand per date, four dates. The first point sees only its
+    # own day; the last sees the whole pool.
+    c = Corpus()
+    for d in (9, 8, 7, 6):
+        for brand, base in (("Rolex", 16000), ("Omega", 5000), ("Cartier", 8000)):
+            c.listing(brand, base + d, d)
+
+    output = run(c, tmp_path, monkeypatch)
+    series = output["composite"]["series"]
+
+    assert series[0]["total_listings"] == 3
+    assert series[-1]["total_listings"] == 12
+
+
+# ── Dead code stays dead ──────────────────────────────────────────────────
+
+def test_unused_trend_variables_are_not_reintroduced():
+    # trend_30d / day_direction / week_direction were computed and never read.
+    # A dead assignment cannot be covered by any test, so it registers as a
+    # permanently surviving mutant and quietly caps the file's score.
+    import ast
+    import inspect
+    import textwrap
+
+    tree = ast.parse(textwrap.dedent(inspect.getsource(ie.build_indices)))
+    assigned = {
+        target.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+    read = {
+        node.id for node in ast.walk(tree)
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
+    }
+
+    for name in ("trend_30d", "day_direction", "week_direction"):
+        assert name not in assigned, f"{name} is back and is still unused"
+    # And nothing else has quietly become dead in the same way.
+    assert (assigned - read - {"_"}) == set(), "dead assignment(s) in build_indices"
+
+
+# ── Rounding precision ────────────────────────────────────────────────────
+# Every published number goes through round(x, 4) — or round(x, 2) for
+# percentages. Tests that land on tidy values like 1.0 or 1.25 cannot detect a
+# change to that precision, so this one is deliberately untidy.
+
+def two_era_corpus(dear_prices):
+    """Ten cheap dates supplying exactly BASELINE_SAMPLE_TARGET listings per
+    brand, then twenty dearer ones. The baseline is the cheap era; the pooled
+    window at the final date is the dear era."""
+    c = Corpus()
+    cheap = [15990, 16000, 16010]
+    for day_index in range(30):
+        days_ago = 40 - day_index
+        prices = cheap if day_index < 10 else dear_prices
+        for brand in ("Rolex", "Omega", "Cartier"):
+            for p in prices:
+                c.listing(brand, p, days_ago)
+    return c
+
+
+def test_composite_is_rounded_to_four_decimals(tmp_path, monkeypatch):
+    # Window median 20003 over a baseline of 16000 gives 1.2501875 — a ratio
+    # that survives rounding to five places but not to four.
+    output = run(two_era_corpus([19993, 20003, 20013]), tmp_path, monkeypatch)
+
+    assert output["composite"]["current"] == 1.2502
+
+
+def test_no_published_series_value_exceeds_four_decimals(tmp_path, monkeypatch):
+    output = run(two_era_corpus([19993, 20003, 20013]), tmp_path, monkeypatch)
+
+    series = (output["composite"]["series"]
+              + output["condition_indices"]["preowned"]["series"]
+              + output["condition_indices"]["new"]["series"])
+    for pt in series:
+        if pt["value"] is None or isinstance(pt["value"], int):
+            continue
+        decimals = str(pt["value"]).split(".")[-1]
+        assert len(decimals) <= 4, f"{pt} carries more precision than it earned"
+
+
+# ── The published key contract ────────────────────────────────────────────
+# web/ reads this JSON. A renamed key is a broken page, and the renames are
+# exactly what a mutation run produces, so name every key that ships.
+
+def test_meta_publishes_its_full_identity_block(tmp_path, monkeypatch):
+    output = run(three_brands_at_baseline(), tmp_path, monkeypatch)
+    meta = output["meta"]
+
+    assert meta["name"] == "SG Luxury Watch Index"
+    assert meta["symbol"] == "SG-LWIX"
+    assert meta["updated"]
+    assert set(meta) == {
+        "name", "symbol", "version", "methodology", "base_value", "anchor_date",
+        "first_computed", "updated", "total_records", "tracked_brands",
+    }
+
+
+def test_top_level_shape_is_exactly_what_the_site_consumes(tmp_path, monkeypatch):
+    output = run(three_brands_at_baseline(), tmp_path, monkeypatch)
+
+    assert set(output) == {
+        "meta", "composite", "condition_indices", "availability",
+        "brand_subindices", "brand_weights", "brand_counts",
+        "brand_contributions", "contributions_total", "composition_effect",
+        "insights", "price_outliers", "price_outlier_count",
+    }
+    assert set(output["composite"]) == {
+        "current", "stale", "days_since_fresh", "change_1d", "change_1d_pct",
+        "change_7d", "change_7d_pct", "change_30d", "change_30d_pct",
+        "change_90d", "change_90d_pct", "series",
+    }
+    assert set(output["condition_indices"]) == {"preowned", "new", "spread"}
+
+
+def test_methodology_quotes_the_parameters_it_actually_ran_with(tmp_path, monkeypatch):
+    # The methodology paragraph is published on the site as a factual claim
+    # about how the number was produced. If a constant changes and the prose
+    # does not, the site starts lying — so the prose interpolates the
+    # constants and this checks the interpolation really happened.
+    output = run(three_brands_at_baseline(), tmp_path, monkeypatch)
+    text = output["meta"]["methodology"]
+
+    assert f"{ie.WINDOW_DAYS}-day rolling window" in text
+    assert f"at least {ie.MIN_PER_BRAND} listings per brand" in text
+    assert str(ie.ANCHOR_VALUE) in text
+
+
+# ── Contribution decomposition, in detail ─────────────────────────────────
+
+def test_each_contribution_reports_the_window_listing_count(tmp_path, monkeypatch):
+    c = Corpus()
+    for brand, base in (("Rolex", 16000), ("Omega", 5000), ("Cartier", 8000)):
+        for i in range(4):
+            c.listing(brand, base + i, 9)
+        for i in range(4):
+            c.listing(brand, base + 500 + i, 8)
+
+    output = run(c, tmp_path, monkeypatch)
+
+    for entry in output["brand_contributions"]:
+        # Eight listings per brand, all inside the final pooled window.
+        assert entry["listings"] == 8
+
+
+def test_composition_effect_is_zero_when_the_brand_set_is_unchanged(tmp_path, monkeypatch):
+    # Same three brands qualifying on both of the last two days and identical
+    # weights, so nothing is left over for the composition term to explain.
+    c = Corpus()
+    for brand, base in (("Rolex", 16000), ("Omega", 5000), ("Cartier", 8000)):
+        for i in range(4):
+            c.listing(brand, base + i, 9)
+        for i in range(4):
+            c.listing(brand, base + i, 8)
+
+    output = run(c, tmp_path, monkeypatch)
+
+    assert output["composition_effect"] == pytest.approx(0.0, abs=1e-6)

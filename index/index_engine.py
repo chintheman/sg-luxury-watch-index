@@ -568,7 +568,6 @@ def build_indices():
     # than letting "anchored at 1.0" imply the series starts there.
     first_computed = next((pt for pt in composite if pt["value"] is not None and not pt.get("stale")), None)
 
-    now_str = datetime.now(SGT).strftime("%Y-%m-%d")
     d7 = (datetime.now(SGT) - timedelta(days=7)).strftime("%Y-%m-%d")
     d30 = (datetime.now(SGT) - timedelta(days=30)).strftime("%Y-%m-%d")
     # v2 computed this from a 180-day lookback while the page labelled it
@@ -626,16 +625,27 @@ def build_indices():
     cond_spread = round(new_latest - po_latest, 4) if (po_latest and new_latest) else None
     avail_latest = availability[-1]["value"] if availability else None
 
-    trend_30d = "rising" if v30 and latest["value"] > v30 else "falling"
-
     # Phase 10: Insights
+    #
+    # trend_30d, day_direction and week_direction used to be computed here and
+    # were never read by anything — not by the output dict, not by the printed
+    # summary, not by web/. Dead assignments cannot be tested by definition, so
+    # they showed up as permanently surviving mutants; deleting them is the only
+    # honest way to clear that. trend_30d also compared latest["value"] > v30
+    # without guarding None, so it was a latent TypeError as well.
     insights = {}
-    
-    # Build a plain-English day summary
-    day_direction = "rose" if chg_1d_pct > 0 else "fell" if chg_1d_pct < 0 else "held"
-    week_direction = "up" if v7 and latest["value"] > v7 else "down" if v7 else None
 
-    if brand_contribs:
+    if latest["value"] is None:
+        # No day reached MIN_BRANDS_PER_COMPOSITE, so there is no index level
+        # to describe. This has to be checked FIRST: individual brands can
+        # still qualify and populate brand_contribs on a day the composite
+        # itself is withheld, and the branch below would then announce a
+        # precise "moved flat 0.0% today" for a number that does not exist.
+        insights["composite"] = (
+            "SG-LWIX has no computed value yet: no day has reached "
+            f"{MIN_BRANDS_PER_COMPOSITE} qualifying brands."
+        )
+    elif brand_contribs:
         # v2 built this as "moved {dir_word}, led by {positive contributors}"
         # regardless of sign, so on a down day the page credited the brands
         # that had gone UP. Name the brands moving WITH the index first.
@@ -666,11 +676,6 @@ def build_indices():
             insights["composite"] = f"SG-LWIX moved down {abs(chg_1d_pct):.1f}% today across all tracked brands."
         else:
             insights["composite"] = "SG-LWIX held flat today across all tracked brands."
-    else:
-        insights["composite"] = (
-            f"SG-LWIX has no computed value yet: no day has reached "
-            f"{MIN_BRANDS_PER_COMPOSITE} qualifying brands."
-        )
 
     if cond_spread is not None:
         insights["condition"] = (
