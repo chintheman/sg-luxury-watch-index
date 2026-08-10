@@ -41,6 +41,13 @@ def analyse(path):
         tree = ast.parse(open(path, encoding="utf-8").read(), filename=path)
     except SyntaxError as e:
         return [(path, 0, "SYNTAX", f"cannot parse: {e}")]
+    except OSError as e:
+        # An unreadable input is a misconfiguration, not a clean file. Only
+        # SyntaxError was caught here, so a missing path raised FileNotFoundError
+        # and killed the process mid-scan: every file after it went unchecked,
+        # and the traceback still exited 1, which g3-vacuity.sh reports as
+        # "vacuous tests found" — the wrong diagnosis for a wrong file list.
+        return [(path, 0, "UNREADABLE", f"cannot read: {e}")]
 
     for node in ast.walk(tree):
         if not is_test(node):
