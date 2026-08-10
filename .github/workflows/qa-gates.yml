@@ -1,0 +1,82 @@
+name: qa-gates
+
+# The mechanical gates (spec §5). Until this existed, none of them ran
+# anywhere: the gate scripts were only invocable by hand, and tests.yml runs
+# pytest alone. A gate nobody executes is documentation, not a gate.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  # The gates checking themselves. Cheap, and it is the run that catches a
+  # gate that has quietly stopped measuring — which has already happened here
+  # twice (a missing vacuity fixture, and a rollback glob narrowed by a
+  # well-meaning refactor).
+  selftest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - name: QA self-tests
+        run: bash .qa/selftest/run.sh
+
+  # G3 — vacuity. Zero-assertion, mock-only, skipped and tautological tests in
+  # whatever this PR changed.
+  vacuity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The gates scope to the diff via `git merge-base HEAD origin/main`.
+          # actions/checkout defaults to a depth-1 clone, where merge-base has
+          # nothing to resolve against and the gate silently checks nothing.
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - name: G3 vacuity
+        env:
+          QA_DEFAULT_BRANCH: main
+        run: bash .qa/gates/g3-vacuity.sh
+
+  # G2 — mutation. The expensive one, so it is its own job with its own cap.
+  #
+  # NOT blocking yet, deliberately: this is G2's first run in CI and its
+  # exit codes distinguish "the gate said no" (1) from "the gate could not
+  # run" (90), which for parser/ it currently cannot — those tests import
+  # unqualified, so mutmut's path-derived mutant keys never match. The job
+  # still goes red and the report is uploaded either way. Remove
+  # continue-on-error once a few PRs have shown what it actually reports.
+  mutation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - name: G2 mutation on changed files
+        env:
+          QA_DEFAULT_BRANCH: main
+          QA_MUTATION_TIMEOUT_SECONDS: "900"
+        run: bash .qa/gates/g2-mutation.sh
+      - name: Upload the mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
+          path: .qa/metrics/
+          if-no-files-found: ignore
