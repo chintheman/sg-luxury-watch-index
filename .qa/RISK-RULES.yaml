@@ -62,7 +62,11 @@ mutation_paths:
   - "!migrations/**"        # one-shot scripts; mutants are mostly equivalent
 
 gates:
-  mutation_threshold: 0.60
+  # Ratcheted 0.60 -> 0.65 on 2026-08-10. index/index_engine.py measured 0.6842
+  # once build_indices() had real coverage, so 0.60 no longer constrains
+  # anything there. §5 G2: ratchet up, never down — a threshold the code
+  # already clears is a gate in name only.
+  mutation_threshold: 0.65
   mutation_wall_clock_seconds: 900
   oracle_min_propositions:
     critical: 8
