@@ -1,95 +1,124 @@
-# PROPOSED separation-of-duties policy for sg-luxury-watch-index.
+# PROPOSED separation-of-duties policy — .qa/policy.yaml plus three fixes.
 #
-# Proposed, not applied — `.qa/policy.yaml` is immutable from inside a session
-# by its own `write_deny_always` rule, and that rule is correct: an agent must
-# not edit the referee mid-game. A human adopts this:
+# `.qa/policy.yaml` is the ONLY file still immutable from inside a session
+# (write_deny_always), and that is correct: an agent must not edit the referee
+# mid-game. So this sits alongside it. To adopt:
 #
 #     mv .qa/policy.proposed.yaml .qa/policy.yaml
 #
-# Two classes of defect in the shipped policy this corrects.
+# This is #6's policy verbatim except for the three items below. #6 was the
+# bigger and better change — extension-based read rules beat directory-based
+# ones, and fitting the write globs to this repo un-bricked patch-smith. These
+# are gaps found by running the guard against the merged result, not a
+# competing design.
 #
-# ---- 1. The snapshot rule over-matched, and blocked ordinary work -----------
+# ---- FIX 1: a Grep with a directory glob walks straight past read_deny ------
 #
-# `(^|\s)(-u|-U)(\s|$)` was matched against the whole command string, for every
-# caller including the main session. It therefore blocked:
+# #6 matches read_deny by file EXTENSION so "a new source folder cannot quietly
+# escape the rule". True, but the guard tests the Grep *pattern* as well as the
+# resolved path, and a bare directory glob has no extension:
 #
-#     git push -u origin <branch>     <- the push command this repo mandates
-#     sort -u                          pip install -U
+#     Grep pattern "index/**"   -> matches no *.py rule -> ALLOWED
 #
-# The intent is to stop a test runner rewriting snapshots, so the pattern is now
-# anchored to a test runner appearing earlier in the same command.
+# spec-oracle could read the implementation that way, which is the single thing
+# it exists not to do. Directory globs are restored ALONGSIDE the extension
+# ones — belt and braces, since the two fail open in different directions.
 #
-# ---- 2. The referee rule blocked reading, not just writing -----------------
+# ---- FIX 2: unit-smith cannot maintain the vacuity fixtures ----------------
 #
-# `\.qa/(policy\.yaml|gates/|RISK-RULES\.yaml)` matched ANY command mentioning
-# those paths, so `ls .qa/gates/` and `grep ... RISK-RULES.yaml` were denied —
-# and, self-defeatingly, so was every attempt to RUN a gate:
+# .qa/fixtures/ now holds the G3 self-test's input. It is not in unit-smith's
+# write_allow, so the agent that owns test quality cannot touch the fixtures
+# that prove the quality gate works.
 #
-#     bash .qa/gates/g3-vacuity.sh    -> BLOCKED
+# ---- FIX 3: nothing stops a shell write to the referee ---------------------
 #
-# The gates could not be executed by the orchestrator, by any agent, or by CI
-# through a session. Writes are already prevented by `write_deny_always`, which
-# is tool-level and cannot be talked around, so the bash rule now targets only
-# the shell verbs that actually mutate a file.
+# write_deny_always is enforced on a tool's TARGET PATH, which covers Write and
+# Edit but not Bash. With the old text-matching bash rule gone there is no
+# check at all on:
 #
-# ---- 3. The path globs described a repository this is not -------------------
+#     echo x > .qa/policy.yaml
+#     sed -i s/0.60/0.10/ .qa/gates/g2-mutation.sh
 #
-# Every glob referred to `src/`, `lib/`, `app/`, `packages/*/src/`. None exist
-# here. Consequences: patch-smith could write no file that exists (its role was
-# inert), and spec-oracle's read_deny covered nothing, so P2 oracle blindness —
-# the one principle that agent exists to enforce — did not hold. That failure
-# was OPEN, which is the direction that matters. Globs below are this repo's.
+# The old rule was far too broad — it matched any command *mentioning* those
+# paths, so `ls .qa/gates/` and even running a gate were blocked. Narrowing it
+# to the mutating verbs keeps the protection and drops the false positives.
+#
+# ---- NOT FIXED HERE: two keys the guard does not implement -----------------
+#
+# `read_allow` and `agent_write_deny` were introduced by #6 and are both INERT:
+# .claude/hooks/qa-guard.py reads only `defaults.write_deny_always`,
+# `bash_deny`, `read_deny`, `url_deny`, `write_allow` and `write_deny`, and it
+# ignores unrecognised keys silently. They are kept below so the intent stays
+# recorded, but they enforce nothing today. Making them real needs an edit to
+# qa-guard.py, which is under .claude/hooks/** and immutable from a session.
 
 defaults:
+  # Snapshot laundering (P8/G4). Every pattern is anchored to a TEST RUNNER.
   bash_deny:
-    # G4/P8: snapshot laundering. Anchored to a test runner so it stops
-    # `vitest -u` without stopping `git push -u`.
-    - '\b(jest|vitest|playwright|pytest|ava|mocha|npx\s+jest|npx\s+vitest)\b[^;&|]*\s(-u|-U)(\s|$)'
-    - '\b(jest|vitest|playwright|pytest|ava|mocha)\b[^;&|]*--(update-snapshots?|updateSnapshot|snapshot-update)'
-    - 'cargo\s+insta\s+accept'
-    # Mutating the referee from a shell. Reading and executing stay allowed —
-    # a gate you cannot run is not a gate.
+    - '\b(jest|vitest)\b[^|;]*\s(-u|--update|--updateSnapshot)(\s|$)'
+    - '\bplaywright\b[^|;]*--update-snapshots'
+    - '\bpytest\b[^|;]*--snapshot-update'
+    - '\bcargo\s+insta\s+accept\b'
+    - '\bava\b[^|;]*--update-snapshots'
+    # FIX 3 — mutating the referee from a shell. Reading and EXECUTING stay
+    # allowed; a gate you cannot run is not a gate.
     - '\b(tee|truncate|dd|shred)\b[^;&|]*\.qa/(policy\.yaml|gates/|RISK-RULES\.yaml)'
     - '\bsed\b[^;&|]*-i[^;&|]*\.qa/(policy\.yaml|gates/|RISK-RULES\.yaml)'
     - '\b(mv|cp|rm|ln)\b[^;&|]*\.qa/(policy\.yaml|gates/|RISK-RULES\.yaml)'
     - '>>?\s*\.qa/(policy\.yaml|gates/|RISK-RULES\.yaml)'
     - '\b(tee|sed|mv|cp|rm|ln|truncate)\b[^;&|]*\.claude/hooks/'
     - '>>?\s*\.claude/hooks/'
+
   write_deny_always:
     - ".qa/policy.yaml"
+    - ".claude/hooks/**"
+
+  # INERT — see the header. Kept so the intent survives.
+  agent_write_deny:
     - ".qa/gates/**"
     - ".qa/RISK-RULES.yaml"
-    - ".claude/hooks/**"
     - ".claude/qa-settings/**"
     - ".github/workflows/**"
 
 agents:
 
-  # --- Analysts: may write only their own .qa/ subdirectory -----------------
   risk-scout:
     write_allow: [".qa/risk/**"]
 
   spec-oracle:
     write_allow: [".qa/oracles/**"]
-    # P2. These are THIS repository's implementation paths. The previous list
-    # named src/, lib/ and app/, so spec-oracle could read index/index_engine.py
-    # — the price index — and encode its current behaviour as intended.
+    # INERT — the guard has no allow-list logic. Recorded, not enforced.
+    read_allow:
+      - "README*"
+      - "docs/**"
+      - "doc/**"
+      - "**/*.md"
+      - "openapi.*"
+      - "swagger.*"
+      - "**/*.graphql"
+      - "**/schema.json"
+      - ".qa/oracles/**"
+      - ".qa/charters/**"
     read_deny:
+      # By extension, so a new source folder cannot quietly escape the rule.
+      - "**/*.py"
+      - "**/*.ts"
+      - "**/*.tsx"
+      - "**/*.js"
+      - "**/*.jsx"
+      - "**/*.sql"
+      - "**/*.diff"
+      - "**/*.patch"
+      # FIX 1 — and by directory, so a bare glob in a Grep pattern cannot slip
+      # past the extension rules.
       - "index/**"
       - "parser/**"
       - "scraper/**"
       - "ops/**"
       - "migrations/**"
       - "web/**"
-      - "pipeline.py"
-      - "sold_tracer.py"
-      - "run_filter.py"
       - "tests/**"
-      - "**/*.test.*"
-      - "**/*.spec.*"
       - ".qa/risk/**"
-      - "**/*.diff"
-      - "**/*.patch"
     url_deny:
       - "/pull/"
       - "/commit/"
@@ -108,45 +137,34 @@ agents:
   authz-prober:
     write_allow: [".qa/authz-matrix.yaml", ".qa/bugs/**", ".qa/reports/authz-**"]
 
-  # --- Test authors: tests and their own reports; never source (P4) ---------
   unit-smith:
-    write_allow: ["tests/**", ".qa/fixtures/**",
+    # FIX 2 — .qa/fixtures/** added: it holds the G3 self-test's input.
+    write_allow: ["tests/**", "**/*.test.*", "**/*.spec.*", ".qa/fixtures/**",
                   ".qa/reports/unit-smith-**", ".qa/disputes/**"]
 
   flow-smith:
     write_allow: ["tests/**", "e2e/**", "**/*.spec.ts", ".qa/plans/**",
                   ".qa/reports/flow-smith-**", ".qa/artifacts/**"]
 
-  # --- Fixer: source only; explicitly NOT tests (P4) ------------------------
+  # The load-bearing row: the agent that fixes code may not edit the test that
+  # judges the fix.
   patch-smith:
-    # Previously src/**, lib/**, app/** — none of which exist here, so this
-    # agent could not write a single file in the repository.
-    write_allow:
-      - "index/**"
-      - "parser/**"
-      - "scraper/**"
-      - "ops/**"
-      - "web/**"
-      - "pipeline.py"
-      - "sold_tracer.py"
-      - "run_filter.py"
+    write_allow: ["index/**", "parser/**", "scraper/**", "web/**",
+                  "pipeline.py", "run_filter.py", "sold_tracer.py"]
     write_deny:
-      # migrations/ is deliberately absent from write_allow AND named here:
-      # RISK-RULES lists it as rollback-unsafe, so a fix there is a human's call.
-      - "migrations/**"
       - "tests/**"
       - "**/*.test.*"
       - "**/*.spec.*"
+      - "**/conftest.py"
+      - "migrations/**"        # applied migrations are not reversible by a deploy
       - ".qa/reports/**"
     bash_deny:
       - '^\s*git\s+(log|show|blame|fetch|pull)'
       - '^\s*(curl|wget)\b'
     url_deny: ["github.com", "gitlab.com", "stackoverflow.com"]
 
-  # --- Build cop ------------------------------------------------------------
   flake-warden:
     write_allow: [".qa/flakes.json", ".qa/reports/nightly-**", ".qa/quarantine.yaml"]
 
-  # --- Marshal: reports only. No code, ever. --------------------------------
   release-marshal:
     write_allow: [".qa/reports/**", ".qa/metrics/verdicts/**"]

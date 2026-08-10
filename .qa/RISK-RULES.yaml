@@ -111,7 +111,17 @@ rollback:
   typical_minutes: 5          # a guess — time a real rollback and correct it
   granularity: whole_deploy
   rollback_unsafe_paths:
+    # Root-anchored AND nested. Fitting the globs to this repo's layout
+    # narrowed "**/migrations/**" to "migrations/**", which silently stopped
+    # matching db/migrations/, web/migrations/ or anything else nested — G7
+    # would have allowed SHIP_WITH_WATCH on an applied migration living one
+    # directory deeper. This is the gate you want over-inclusive: a false
+    # refusal costs a conversation, a false allow costs a database.
     - "migrations/**"
+    - "**/migrations/**"
+    - "**/migrate/**"
+    - "**/*_migration.*"
+    - "**/backfill*"
     # A published index figure that readers have already seen cannot be
     # un-published by redeploying yesterday's code.
     - "index/export_pipeline.py"
