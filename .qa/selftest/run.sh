@@ -15,6 +15,7 @@ run() { # label script...
 }
 
 run "G5 separation-of-duties guard" bash "$HERE/guard-selftest.sh"
+run "G5 guard vs the PROPOSED policy" bash "$HERE/guard-proposed-selftest.sh"
 run "G1 fails-before three-state"   bash "$HERE/g1-selftest.sh"
 run "G3 vacuity detection"          bash "$HERE/g3-selftest.sh"
 run "G6/G7 gate behaviour"          bash "$HERE/g67-selftest.sh"

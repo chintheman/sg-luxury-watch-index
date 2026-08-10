@@ -30,10 +30,33 @@ est_for() { case "$1" in
   flow-smith) echo 6.00 ;; prober) echo 4.00 ;; authz-prober) echo 3.00 ;;
   release-marshal) echo 1.50 ;; *) echo 1.00 ;; esac; }
 
+# An agent's name is NOT its slash command: the agents are named for the role
+# (unit-smith), the commands for the task (/qa-test). Interpolating "/qa-$agent"
+# produced "/qa-unit-smith" — a command that does not exist — for every agent on
+# every route, so no dispatch could ever have worked. Anything unmapped is a
+# hard error: dispatching a non-existent command wastes a turn and returns
+# nothing, which the marshal would read as an agent that ran and found nothing.
+command_for() { case "$1" in
+  risk-scout)      echo qa-risk ;;
+  spec-oracle)     echo qa-oracle ;;
+  unit-smith)      echo qa-test ;;
+  flow-smith)      echo qa-flow ;;
+  prober)          echo qa-probe ;;
+  patch-smith)     echo qa-fix ;;
+  release-marshal) echo qa-verdict ;;
+  *) return 1 ;;
+esac; }
+
 echo "PR #$PR — band '$BAND' — route: ${ROUTE[*]:-none}"
 STOPPED=""
 
 for agent in "${ROUTE[@]}"; do
+  if ! cmd="$(command_for "$agent")"; then
+    echo "  ERROR: '$agent' is routed by RISK-RULES.yaml but has no /qa-* command."
+    echo "  Add one under .claude/commands/, or remove it from the route."
+    STOPPED="$agent"
+    break
+  fi
   est="$(est_for "$agent")"
   if ! "$QA_ROOT/.qa/gates/g6-budget.sh" check "$agent" "$est"; then
     STOPPED="$agent"
@@ -45,8 +68,8 @@ for agent in "${ROUTE[@]}"; do
     continue
   fi
 
-  echo "  dispatching $agent ..."
-  out="$(claude -p "/qa-$agent $PR" \
+  echo "  dispatching $agent (/$cmd) ..."
+  out="$(claude -p "/$cmd $PR" \
         --settings "$QA_ROOT/.claude/qa-ci-settings.json" \
         --agent "$agent" --permission-mode dontAsk \
         --output-format json 2>/dev/null)"
@@ -58,8 +81,8 @@ if [[ -n "$STOPPED" ]]; then
   # Never silently truncate. The marshal must report LOW with an explicit
   # reason and list the agents that never ran — a truncated run reporting
   # success is worse than no run at all.
-  echo "STOPPED before '$STOPPED': PR budget exhausted."
-  echo "release-marshal must report LOW / budget_exhausted and list the skipped agents under untested."
+  echo "STOPPED before '$STOPPED'."
+  echo "release-marshal must report LOW, name the reason, and list the agents that never ran under untested."
   exit 1
 fi
 echo "route complete; spent \$$("$QA_ROOT/.qa/gates/g6-budget.sh" total)"
