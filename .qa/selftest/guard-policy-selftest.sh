@@ -1,27 +1,29 @@
 #!/usr/bin/env bash
-# Self-test for .qa/policy.proposed.yaml — the repo-fitted policy.
+# The full behavioural table for .qa/policy.yaml.
 #
-# Why this is a second file rather than an edit to guard-selftest.sh: that table
-# asserts against the SHIPPED policy, whose globs are the kit's placeholders
-# (src/, lib/, app/). The two policies disagree by design — under the shipped
-# one patch-smith may write src/calc.py and spec-oracle may read
-# index/index_engine.py; under this one it is the other way round, which is the
-# point. One table cannot be green against both.
+# This began life asserting against .qa/policy.proposed.yaml, run in a sandbox
+# so the proposal and the live policy could be compared side by side. The
+# proposal has been adopted, so it now points at the real file.
 #
-# So this runs the guard against a throwaway CLAUDE_PROJECT_DIR whose
-# policy.yaml IS the proposed file. When a human adopts the proposal, they
-# delete guard-selftest.sh's placeholder rows and keep these.
+# It no longer has a skip path. It used to exit 0 when its target was missing,
+# which is exactly the vacuity G3 exists to reject: a self-test that passes by
+# not running is worse than no self-test, and adopting the proposal would have
+# silently turned these 43 assertions off.
+#
+# guard-selftest.sh stays as the smaller smoke table; this is the exhaustive
+# one. It still runs against a throwaway CLAUDE_PROJECT_DIR so the guard reads
+# a policy at a known path regardless of where this is invoked from.
 set -uo pipefail
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 GUARD="$KIT/.claude/hooks/qa-guard.py"
-PROPOSED="$KIT/.qa/policy.proposed.yaml"
+POLICY="$KIT/.qa/policy.yaml"
 
-[[ -f "$PROPOSED" ]] || { echo "  SKIP  no .qa/policy.proposed.yaml"; exit 0; }
+[[ -f "$POLICY" ]] || { echo "  FAIL  no .qa/policy.yaml to test"; exit 1; }
 
 SANDBOX="$(mktemp -d)"
 trap 'rm -rf "$SANDBOX"' EXIT
 mkdir -p "$SANDBOX/.qa"
-cp "$PROPOSED" "$SANDBOX/.qa/policy.yaml"
+cp "$POLICY" "$SANDBOX/.qa/policy.yaml"
 
 fails=0; total=0
 
@@ -39,7 +41,7 @@ r() { jq -nc --arg a "$1" --arg p "$2" '{agent_type:$a,tool_name:"Read",tool_inp
 b() { jq -nc --arg a "$1" --arg c "$2" '{agent_type:$a,tool_name:"Bash",tool_input:{command:$c}}'; }
 ob() { jq -nc --arg c "$1" '{tool_name:"Bash",tool_input:{command:$c}}'; }
 
-echo "=== proposed-policy guard self-test ==="
+echo "=== policy guard self-test ==="
 
 echo "-- the regression that motivated this: ordinary commands must survive --"
 check "orchestrator git push -u origin"        ALLOW "$(ob 'git push -u origin claude/qa-lvqlj1')"
@@ -97,5 +99,5 @@ check "unknown agent bash"                     BLOCK "$(b rogue-agent 'ls')"
 check "escape via absolute path"               BLOCK "$(w unit-smith /etc/passwd)"
 
 echo
-if [[ $fails -eq 0 ]]; then echo "proposed-policy self-test: all $total cases correct"; exit 0
-else echo "proposed-policy self-test: $fails of $total case(s) wrong"; exit 1; fi
+if [[ $fails -eq 0 ]]; then echo "policy self-test: all $total cases correct"; exit 0
+else echo "policy self-test: $fails of $total case(s) wrong"; exit 1; fi

@@ -26,6 +26,35 @@ jobs:
       - name: QA self-tests
         run: bash .qa/selftest/run.sh
 
+  # The 44 acceptance tests that skip unless data/ holds built artefacts.
+  #
+  # They are post-build checks on the published index, references and signals,
+  # so they cannot be rewritten to build their own fixtures without ceasing to
+  # be what they are. The consequence was that they had never executed
+  # anywhere — not in CI, and not locally without a scrape. An assertion nobody
+  # runs is indistinguishable from one that is wrong.
+  #
+  # This does NOT replace running them against a real scrape, which checks
+  # something a synthetic corpus cannot. It checks that they are executable and
+  # self-consistent, which until now nothing did.
+  acceptance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - name: Build a synthetic index, references and signals
+        run: python3 scripts/qa-sample-index.py --force
+      - name: Acceptance tests that would otherwise skip
+        run: |
+          python3 -m pytest -q -rs \
+            tests/test_index_v3.py \
+            tests/test_references.py \
+            tests/test_sold_and_signals.py
+
   # G3 — vacuity. Zero-assertion, mock-only, skipped and tautological tests in
   # whatever this PR changed.
   vacuity:
