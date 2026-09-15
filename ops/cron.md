@@ -75,3 +75,118 @@ be ruled out from inside the codebase. Dropping the step would not delete the
 asset; it would leave it silently serving stale data, which is worse than
 either keeping it or deleting it outright. Remove it only after confirming
 nothing external polls it.
+
+## Telegram group delivery — known failure (2026-08-10)
+
+The report's intended target, the group "(Project) Luxury Watch Index" (chat ID `-5370852148`), is reachable by the Hermes bot but NOT by Zo's Telegram bot (`@steamboat0x0`) — `send_telegram_message` fails with "No Telegram binding found for recipient". The run falls back to the user's DM. To restore in-group delivery: add Zo's bot to the group (as admin), or change the automation's delivery target.
+
+Update 2026-08-20: `hermes send --to telegram:-5370852148` now also fails with
+`Telegram send failed: Unauthorized`, and the group no longer appears in
+`hermes send --list telegram` — the Hermes bot has lost access to the group
+as well (removed, or bot token rotated). Both bots are out; fallback to the
+user's DM is the only working path until one bot is re-added to the group as
+admin.
+
+Update 2026-09-10: still unreachable. `send_telegram_message` to
+`-5370852148` → "No Telegram binding found for recipient"; `hermes send
+--to telegram:-5370852148` → `Telegram send failed: Unauthorized`. `hermes
+send --list telegram` now shows only the DM (`telegram:0xsteamboat`) and one
+other group, `telegram:Collab` (`-5510157259`) — a different chat ID, so the
+original group is gone from both bots' scopes, not renamed. Report continues
+to fall back to the user's DM.
+
+Update 2026-09-12: unchanged. `send_telegram_message` to `-5370852148` →
+"No Telegram binding found for recipient '-5370852148'. Connected accounts:
+steamboat0x0." Report delivered to the user's DM instead.
+
+Update 2026-09-13: unchanged. `hermes send --list telegram` still shows only
+`telegram:0xsteamboat` and `telegram:Collab`; group `-5370852148` is absent
+from both bots' scopes. Report delivered to the user's DM instead. Pipeline
+itself healthy: exit 0, 150 new messages across 14 channels, composite 1.1015
+(−0.41% 1d), 2 anomaly flags, route drift and page contract both clean.
+Zero-new-message channel this run: `goldmanluxurysg` (still at message id 544,
+verified directly against t.me/s/goldmanluxurysg).
+
+(Note on the 2026-09-13 run: the direct group send was not exercised — the run
+hit the per-turn limit on `send_telegram_message` first, so the "unreachable"
+call rests on `hermes send --list telegram` (group absent from both bots'
+scope, unchanged from 2026-09-12) plus the 2026-09-12 result. The DM fallback
+delivered successfully.)
+
+Update 2026-09-13 (18:00 SGT run): unchanged. Direct group send not
+re-attempted — `hermes send --list telegram` still shows only
+`telegram:0xsteamboat` and `telegram:Collab` (`-5510157259`); group
+`-5370852148` absent from both bots' scopes. Report delivered to the user's
+DM. Pipeline healthy: exit 0, 134 new messages across 14 channels, composite
+`1.1013` (−0.30% 1d), 2 anomaly flags, route drift and page contract both
+clean, asset refreshed. Zero-new-message channels this run: `ChuanwatchSG`,
+`watchcapital`, `goldmanluxurysg`, `sgwatchinsider`, `HengWatch`, `kbluxury`,
+`watchhunts`.
+
+Update 2026-09-13 (18:15 SGT, mid-run state): Hermes has now lost Telegram
+delivery entirely, not just the group. `hermes send --to telegram:0xsteamboat`
+(the DM target that was working on 2026-09-12) → `Telegram send failed:
+Unauthorized`, despite `hermes send --list telegram` still listing
+`telegram:0xsteamboat` and `telegram:Collab`. So Hermes' bot token is dead or
+rotated, and `send_telegram_message` to the DM is the only remaining Telegram
+path. On this run that path then hit the per-turn limit (3 calls) before
+delivering, so the report went out by email instead. Two separate failures to
+fix: (1) Zo's bot `@steamboat0x0` is not in group `-5370852148`; (2) Hermes'
+Telegram credentials are rejected. Until at least one is resolved, expect
+either DM-only delivery or the per-turn limit to swallow a run when a group
+send is attempted first.
+
+Update 2026-09-14 (12:00 SGT run): unchanged. `send_telegram_message` to
+`-5370852148` → "No Telegram binding found for recipient '-5370852148'.
+Connected accounts: steamboat0x0." Report delivered to the user's DM instead.
+Pipeline healthy: exit 0, 144 new messages across 14 channels, composite
+`1.1030` (+1.33% 1d, +0.0145), 2 anomaly flags, route drift and page contract
+both clean, asset refreshed (verified live at
+`https://0xsteamboat.zo.space/data/watch-index.json`).
+Zero-new-message channels this run (9): `ChuanwatchSG`, `watchcapital`,
+`goldmanluxurysg`, `watchplayboypteltd`, `sgwatchinsider`, `HengWatch`,
+`kbluxury`, `tagtimesingapore`, `watchhunts`.
+
+Update 2026-09-14 (18:00 SGT run): unchanged. `send_telegram_message` to
+`-5370852148` → "No Telegram binding found for recipient '-5370852148'.
+Connected accounts: steamboat0x0." Report delivered to the user's DM instead.
+Pipeline healthy: exit 0, 183 new messages across 14 channels, composite
+`1.1036` (+0.94% 1d, +0.0103), 2 anomaly flags, route drift and page contract
+both clean, asset refreshed (verified live at
+`https://0xsteamboat.zo.space/data/watch-index.json`).
+Zero-new-message channels this run (6): `watchdistrictsg`, `watchcapital`,
+`goldmanluxurysg`, `watchplayboypteltd`, `sgwatchinsider`, `HengWatch`.
+
+Update 2026-09-15 (12:00 SGT run): unchanged on both fronts. Direct group send
+re-attempted — `send_telegram_message` to `-5370852148` → "No Telegram binding
+found for recipient '-5370852148'. Connected accounts: steamboat0x0."
+`hermes send --list telegram` still shows only `telegram:0xsteamboat` and
+`telegram:Collab` (`-5510157259`); group `-5370852148` absent from both bots'
+scopes. Report delivered to the user's DM. Pipeline healthy: exit 0, 195 new
+messages across 14 channels, composite `1.1032` (+0.50% 1d, +0.0055), 2 anomaly
+flags, route drift and page contract both clean, asset refreshed (verified live
+at `https://0xsteamboat.zo.space/data/watch-index.json`, size 413072, updated
+2026-09-15T12:15:34+08:00).
+Zero-new-message channels this run (5): `watchcapital`, `goldmanluxurysg`,
+`watchplayboypteltd`, `sgwatchinsider`, `watchhunts`.
+
+Update 2026-09-15 (12:00 SGT run): unchanged for the group. `send_telegram_message`
+to `-5370852148` → "No Telegram binding found for recipient '-5370852148'.
+Connected accounts: steamboat0x0." `hermes send --list telegram` still shows
+only `telegram:0xsteamboat` and `telegram:Collab` (`-5510157259`); group
+`-5370852148` absent from both bots' scopes.
+
+Delivery on this run went by EMAIL, not DM. The failed group attempt counted
+against the per-turn `send_telegram_message` limit, so the DM fallback was
+refused with "STOP: Do not call send_telegram_message again this turn." The
+instruction to "report to the group" therefore costs the DM fallback whenever
+the group send is attempted and fails. Recommended change: read
+`hermes send --list telegram` first and skip the group attempt entirely when
+`-5370852148` is absent, so the one available Telegram call goes to the DM.
+
+Pipeline healthy: exit 0, 195 new messages across 14 channels, composite
+`1.1032` (+0.50% 1d, +0.0055), 2 anomaly flags, route drift and page contract
+both clean, asset refreshed (verified live at
+`https://0xsteamboat.zo.space/data/watch-index.json`, 413072 bytes).
+Zero-new-message channels this run (5): `watchcapital`, `goldmanluxurysg`,
+`watchplayboypteltd`, `sgwatchinsider`, `watchhunts`.
