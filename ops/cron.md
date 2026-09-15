@@ -190,3 +190,25 @@ both clean, asset refreshed (verified live at
 `https://0xsteamboat.zo.space/data/watch-index.json`, 413072 bytes).
 Zero-new-message channels this run (5): `watchcapital`, `goldmanluxurysg`,
 `watchplayboypteltd`, `sgwatchinsider`, `watchhunts`.
+
+Update 2026-09-15 (18:00 SGT run): unchanged for the group — and the group send
+was NOT attempted this run. Per the recommendation above, `hermes send --list
+telegram` was read first: it shows only `telegram:0xsteamboat` and
+`telegram:Collab` (`-5510157259`), so group `-5370852148` remains absent from
+both bots' scopes and the single available Telegram call went to the DM
+instead. That worked: the report was delivered on the first
+`send_telegram_message` call with the DM as the only target, no per-turn limit
+hit. This is the pattern to keep using until one bot is re-added to the group.
+
+Pipeline healthy: exit 0, 149 new messages across 14 channels, composite
+`1.1004` (+0.61% 1d, +0.0067), 2 anomaly flags, route drift and page contract
+both clean, asset refreshed (verified live at
+`https://0xsteamboat.zo.space/data/watch-index.json`, HTTP 200, 413164 bytes,
+updated 2026-09-15T18:15:32+08:00).
+Zero-new-message channels this run (5): `watchcapital`, `goldmanluxurysg`,
+`watchplayboypteltd`, `sgwatchinsider`, `HengWatch`.
+
+Note: `web/routes/api-watch-listings.ts` and `web/routes/api-watch-references.ts`
+carry uncommitted local modifications (pre-existing, not from this run). The
+pipeline's route-drift check still reports the deployed route matching the repo;
+left uncommitted deliberately rather than folded into an ops log commit.
