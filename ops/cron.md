@@ -212,3 +212,38 @@ Note: `web/routes/api-watch-listings.ts` and `web/routes/api-watch-references.ts
 carry uncommitted local modifications (pre-existing, not from this run). The
 pipeline's route-drift check still reports the deployed route matching the repo;
 left uncommitted deliberately rather than folded into an ops log commit.
+
+Update 2026-09-16 (12:00 SGT run): group still unreachable, group send NOT
+attempted (checked `hermes send --list telegram` first — only
+`telegram:0xsteamboat` and `telegram:Collab` (`-5510157259`) listed; group
+`-5370852148` absent). The single Telegram call went to the DM and delivered
+on the first attempt. Pipeline healthy: exit 0, 163 new messages across 14
+channels, composite `1.0982` (−0.46% 1d, −0.0051), 2 anomaly flags, route
+drift and page contract both clean, asset refreshed (verified live at
+`https://0xsteamboat.zo.space/data/watch-index.json`, HTTP 200, 414242 bytes,
+updated 2026-09-16T12:16:29+08:00).
+Zero-new-message channels this run (7): `watchcapital`, `goldmanluxurysg`,
+`watchplayboypteltd`, `sgwatchinsider`, `HengWatch`, `tagtimesingapore`,
+`watchhunts`.
+
+Update 2026-09-16 (18:00 SGT run): group still unreachable, group send NOT
+attempted (checked `hermes send --list telegram` first — only
+`telegram:0xsteamboat` and `telegram:Collab` (`-5510157259`) listed; group
+`-5370852148` absent). The single Telegram call went to the DM and delivered
+on the first attempt. Pipeline healthy: exit 0, 119 new messages across 14
+channels, composite `1.0959` (−0.61% 1d, −0.0067), 2 anomaly flags, route
+drift and page contract both clean, asset refreshed (verified live at
+`https://0xsteamboat.zo.space/data/watch-index.json`, HTTP 200, 414278 bytes,
+updated 2026-09-16T18:16:22+08:00).
+Zero-new-message channels this run (4): `watchcapital`, `goldmanluxurysg`,
+`sgwatchinsider`, `HengWatch`.
+
+Note on reconstructing per-channel counts: this run's stdout was piped through
+`tail`, so the zero-new list was rebuilt from `raw_messages.scraped_at` within
+the run window 10:10:13–10:11:00 UTC. `scraped_at` is UTC and `first_seen_at`
+is SGT — do not mix the two, or you will silently pull rows from the wrong
+window. The per-channel sums total 119, exactly matching the scraper's reported
+total, which is what validates the method. Re-running the pipeline to
+regenerate the log is NOT a valid fix: by then the incremental scraper has
+already saved those messages, so a second run reports 0 new for every channel
+and the zero-new answer becomes a false positive across the board.
