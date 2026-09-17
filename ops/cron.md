@@ -271,3 +271,19 @@ drift and page contract both clean, asset refreshed (verified live at
 returning composite 1.0962 / +1.92%).
 Zero-new-message channels this run (7): `watchcapital`, `goldmanluxurysg`,
 `watchplayboypteltd`, `sgwatchinsider`, `HengWatch`, `kbluxury`, `watchhunts`.
+
+Update 2026-09-17 (18:00 SGT run): group still unreachable, group send NOT
+attempted (checked `hermes send --list telegram` first — only
+`telegram:0xsteamboat` and `telegram:Collab` (`-5510157259`) listed; group
+`-5370852148` absent). The single Telegram call went to the DM and delivered
+on the first attempt. Pipeline healthy: exit 0, 153 new messages across 14
+channels, composite `1.0979` (+1.17% 1d, +0.0127), 2 anomaly flags, route
+drift and page contract both clean, asset refreshed (verified live at
+`https://0xsteamboat.zo.space/data/watch-index.json`, HTTP 200, 415386 bytes,
+reads back composite `1.0979`).
+Zero-new-message channels this run (7): `watchdistrictsg`, `ChuanwatchSG`,
+`watchcapital`, `goldmanluxurysg`, `sgwatchinsider`, `HengWatch`,
+`tagtimesingapore`.
+
+Note: the two 2026-09-17 12:00 entries above are duplicates of each other
+(appended by the same run, `358e4ff` / `365698f`) — not two separate runs.
