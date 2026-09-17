@@ -247,3 +247,15 @@ total, which is what validates the method. Re-running the pipeline to
 regenerate the log is NOT a valid fix: by then the incremental scraper has
 already saved those messages, so a second run reports 0 new for every channel
 and the zero-new answer becomes a false positive across the board.
+
+Update 2026-09-17 (12:00 SGT run): group still unreachable, group send NOT
+attempted (checked `hermes send --list telegram` first — only
+`telegram:0xsteamboat` and `telegram:Collab` (`-5510157259`) listed; group
+`-5370852148` absent). The single Telegram call went to the DM and delivered
+on the first attempt. Pipeline healthy: exit 0, 166 new messages across 14
+channels, composite `1.0962` (+1.92% 1d, +0.0207), 2 anomaly flags, route
+drift and page contract both clean, asset refreshed (verified live at
+`https://0xsteamboat.zo.space/data/watch-index.json`, HTTP 200, 415389 bytes,
+reads back composite `1.0962` / `+1.92`).
+Zero-new-message channels this run (7): `watchcapital`, `goldmanluxurysg`,
+`watchplayboypteltd`, `sgwatchinsider`, `HengWatch`, `kbluxury`, `watchhunts`.
