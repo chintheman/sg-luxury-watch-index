@@ -287,3 +287,24 @@ Zero-new-message channels this run (7): `watchdistrictsg`, `ChuanwatchSG`,
 
 Note: the two 2026-09-17 12:00 entries above are duplicates of each other
 (appended by the same run, `358e4ff` / `365698f`) — not two separate runs.
+
+Update 2026-09-18 (12:15 SGT run): group still unreachable, group send NOT
+attempted (checked `hermes send --list telegram` first — only
+`telegram:0xsteamboat` and `telegram:Collab` (`-5510157259`) listed; group
+`-5370852148` absent). The single Telegram call went to the DM and delivered
+on the first attempt. Pipeline healthy: exit 0, 189 new messages across 14
+channels, composite `1.0978` (−0.15% 1d, −0.0016), 2 anomaly flags, route
+drift and page contract both clean, asset refreshed (verified live at
+`https://0xsteamboat.zo.space/data/watch-index.json`, HTTP 200, 416341 bytes,
+reads back composite `1.0978`).
+Zero-new-message channels this run (9): `ChuanwatchSG`, `watchcapital`,
+`goldmanluxurysg`, `watchplayboypteltd`, `sgwatchinsider`, `HengWatch`,
+`kbluxury`, `tagtimesingapore`, `watchhunts`.
+
+Note on reconstructing per-channel counts: this run's stdout was piped through
+`tail`, so the zero-new list was rebuilt from `raw_messages.scraped_at` within
+the run window 04:10:32–04:10:55 UTC. `scraped_at` is UTC and `first_seen_at`
+is SGT — do not mix the two. The per-channel sums (watchexchangesg 104,
+watchbooksg 56, pngwatchdealer 16, watchdistrictsg 7, thefinesttime 6) total
+189, exactly matching the scraper's reported total, which is what validates
+the method.
