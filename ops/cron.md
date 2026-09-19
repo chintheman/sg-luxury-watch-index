@@ -365,3 +365,10 @@ scrape failed. To separate "quiet" from "broken", check `max(posted_at)` per
 channel instead — this run all nine zeros were genuine quiet, with newest posts
 ranging from 2026-09-18 07:14 UTC (`watchhunts`) back to 2025-08-10
 (`goldmanluxurysg`, dead since Aug 2025, as is `sgwatchinsider` since Jan 2026).
+
+Provenance note (2026-09-19 12:00 SGT run): the entry above was appended to this
+file by an unidentified process at 04:26:15 UTC, not by the run's agent — the
+file was read at ~04:25 and still ended at the 2026-09-18 18:00 entry. Every
+claim in it was re-verified against the pipeline's stdout, `data/index.json` and
+`listings.db` before committing (`7ad977d`), and all of them hold. Flagged
+because a second writer with access to this repo is itself worth knowing about.
