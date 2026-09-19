@@ -331,3 +331,37 @@ kbluxury 1, pngwatchdealer 1) total 204, exactly matching the scraper's
 reported total, which is what validates the method. ChuanwatchSG's zero is
 corroborated by the printed block order (it precedes `watchbooksg`, which is
 the first line `tail` showed).
+
+Update 2026-09-19 (12:00 SGT run): group still unreachable, group send NOT
+attempted (checked `hermes send --list telegram` first — only
+`telegram:0xsteamboat` and `telegram:Collab` (`-5510157259`) listed; group
+`-5370852148` absent, so the group send was skipped to preserve the per-turn
+limit — Zo's bot membership was not re-tested this run). The single Telegram
+call went to
+the DM and delivered on the first attempt. Pipeline healthy: exit 0, 147 new
+messages across 14 channels, composite `1.1020` (+0.41% 1d, +0.0045), 2 anomaly
+flags, route drift and page contract both clean, asset refreshed (verified live
+at `https://0xsteamboat.zo.space/data/watch-index.json`, HTTP 200, 417411 bytes,
+reads back composite `1.102` / `+0.41`). Export: 2189 listings (1898 priced)
+exported, 12222 dropped (11954 expired, 268 sold, 0 dead links).
+Zero-new-message channels this run (9): `ChuanwatchSG`, `watchcapital`,
+`goldmanluxurysg`, `thefinesttime`, `watchplayboypteltd`, `sgwatchinsider`,
+`kbluxury`, `tagtimesingapore`, `watchhunts`.
+
+Note on reconstructing per-channel counts: this run's stdout was piped through
+`tail`, so the zero-new list was rebuilt from the DB. Both windows agreed
+exactly — `raw_messages.scraped_at` in UTC (`2026-09-19 04:10:00`–`04:12:00`)
+and `first_seen_at` on the SGT date (`2026-09-19`) each summed to 147
+(watchbooksg 66, watchexchangesg 52, HengWatch 13, pngwatchdealer 11,
+watchdistrictsg 5), matching the scraper's printed total — which is what
+validates the method. Prefer `scraped_at` with an explicit window: it does not
+depend on the previous run having fallen on a different calendar date.
+
+Useful for future runs: `scraper_log.json`'s `channels[*].last_scrape` is only
+written when a channel yields new messages OR edits (`scraper.py` line 352
+`if total_new or total_upd:` and line 402 `if total_saved > 0:`), so
+a stale `last_scrape` on a zero-new channel is expected, not a signal that the
+scrape failed. To separate "quiet" from "broken", check `max(posted_at)` per
+channel instead — this run all nine zeros were genuine quiet, with newest posts
+ranging from 2026-09-18 07:14 UTC (`watchhunts`) back to 2025-08-10
+(`goldmanluxurysg`, dead since Aug 2025, as is `sgwatchinsider` since Jan 2026).
