@@ -372,3 +372,33 @@ file was read at ~04:25 and still ended at the 2026-09-18 18:00 entry. Every
 claim in it was re-verified against the pipeline's stdout, `data/index.json` and
 `listings.db` before committing (`7ad977d`), and all of them hold. Flagged
 because a second writer with access to this repo is itself worth knowing about.
+
+Update 2026-09-19 (18:00 SGT run): group still unreachable, group send NOT
+attempted (checked `hermes send --list telegram` first — only
+`telegram:0xsteamboat` and `telegram:Collab` (`-5510157259`) listed; group
+`-5370852148` absent, so the group send was skipped to preserve the per-turn
+limit — Zo's bot membership was not re-tested this run). The single Telegram
+call went to the DM and delivered on the first attempt. Pipeline healthy: exit
+0, 112 new messages across 14 channels, composite `1.1072` (+0.81% 1d, +0.0089),
+2 anomaly flags, route drift and page contract both clean, asset refreshed
+(verified live at `https://0xsteamboat.zo.space/data/watch-index.json`, HTTP
+200, 417400 bytes, reads back composite `1.1072` / `+0.81`). Export: 2204
+listings (1898 priced) exported, 12247 dropped (11951 expired, 296 sold, 0 dead
+links).
+Zero-new-message channels this run (8): `ChuanwatchSG`, `pngwatchdealer`,
+`watchcapital`, `goldmanluxurysg`, `watchplayboypteltd`, `sgwatchinsider`,
+`HengWatch`, `tagtimesingapore`.
+
+Note on reconstructing per-channel counts: not needed this run — unlike recent
+runs, stdout was NOT piped through `tail`, so the printed per-channel blocks
+were read directly. The 14 printed per-channel new-message counts
+(6+0+74+0+11+0+0+15+0+0+0+1+0+5) sum to 112, exactly matching the scraper's
+reported total, which is what validates the zero-new list. Prefer this: it
+costs nothing and removes the `scraped_at` (UTC) vs `first_seen_at` (SGT)
+window ambiguity entirely.
+
+Note: `web/routes/api-watch-listings.ts` and `web/routes/api-watch-references.ts`
+still carry the same uncommitted local modifications as the 2026-09-15 entry
+(pre-existing, not from this run). The pipeline's route-drift check reports the
+deployed route matching the repo; left uncommitted rather than folded into this
+ops log commit.
