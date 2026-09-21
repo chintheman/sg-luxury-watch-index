@@ -458,3 +458,31 @@ Note: `web/routes/api-watch-listings.ts` and `web/routes/api-watch-references.ts
 still carry the same uncommitted local modifications as previously logged
 (pre-existing, not from this run). The pipeline's route-drift check reports the
 deployed route matching the repo.
+
+Update 2026-09-21 (18:00 SGT run): group still unreachable, group send NOT
+attempted. `hermes send --list telegram` → "no targets found for platform
+'telegram'. Configured: (none)" (unchanged from the 2026-09-20 12:00 entry —
+Hermes' Telegram target list is still empty), so the group send was skipped to
+preserve the per-turn limit. The single Telegram call went to the DM and
+delivered on the first attempt. Pipeline healthy: exit 0, 170 new messages
+across 14 channels, composite `1.0982` (+0.67% 1d, +0.0073), 2 anomaly flags,
+route drift and page contract both clean. Export: 2242 listings (1892 priced)
+exported, 12394 dropped (12106 expired, 288 sold, 0 dead links). Asset
+refreshed (verified live at `https://0xsteamboat.zo.space/data/watch-index.json`,
+HTTP 200, 419393 bytes, updated 2026-09-21T18:16:15+08:00, reads back composite
+`1.0982` / `+0.67`).
+Zero-new-message channels this run (8): `ChuanwatchSG`, `pngwatchdealer`,
+`watchcapital`, `goldmanluxurysg`, `watchplayboypteltd`, `sgwatchinsider`,
+`HengWatch`, `tagtimesingapore`.
+
+Note on the zero-new list: stdout was captured in full (via `tee`), so the list
+is read straight off the scraper's printed per-channel blocks, no DB
+reconstruction needed. Per-channel new counts: watchbooksg 83,
+watchexchangesg 47, thefinesttime 30, kbluxury 7, watchhunts 2, watchdistrictsg
+1, and zeros for the eight above. Sum = 170, exactly matching the scraper's
+reported total, which is what validates the list.
+
+Note: `web/routes/api-watch-listings.ts` and `web/routes/api-watch-references.ts`
+still carry the same uncommitted local modifications as previously logged
+(pre-existing, not from this run). The pipeline's route-drift check reports the
+deployed route matching the repo.
