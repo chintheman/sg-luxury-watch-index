@@ -514,3 +514,35 @@ Note: `web/routes/api-watch-listings.ts` and `web/routes/api-watch-references.ts
 still carry the same uncommitted local modifications as previously logged
 (pre-existing, not from this run). The pipeline's route-drift check reports the
 deployed route matching the repo.
+
+Update 2026-09-22 (18:00 SGT run): group still unreachable, group send NOT
+attempted. `hermes send --list telegram` → "no targets found for platform
+'telegram'. Configured: (none)" (unchanged since the 2026-09-20 12:00 entry), so
+the group send was skipped to preserve the per-turn limit. The single Telegram
+call went to the DM and delivered on the first attempt. Pipeline healthy: exit
+0, 177 new messages across 14 channels, composite `1.0988` (+0.76% 1d, +0.0083),
+2 anomaly flags, route drift and page contract both clean. Export: 2277
+listings (1911 priced) exported, 12529 dropped (12247 expired, 282 sold, 0 dead
+links). Asset refreshed (verified live at
+`https://0xsteamboat.zo.space/data/watch-index.json`, HTTP 200, 420431 bytes,
+updated 2026-09-22T18:17:51+08:00, reads back composite `1.0988` / `+0.76`).
+Zero-new-message channels this run (5): `goldmanluxurysg`, `watchplayboypteltd`,
+`sgwatchinsider`, `HengWatch`, `tagtimesingapore`.
+
+Note on the zero-new list: stdout was captured in full, so the list is read
+straight off the scraper's printed per-channel blocks, no DB reconstruction
+needed. Per-channel new counts: watchexchangesg 71, watchbooksg 66,
+thefinesttime 14, watchdistrictsg 9, kbluxury 7, ChuanwatchSG 6, pngwatchdealer
+2, watchcapital 1, watchhunts 1, and zeros for the five above. Sum = 177,
+exactly matching the scraper's reported total, which is what validates the list.
+Independent DB cross-check on `raw_messages.scraped_at >= '2026-09-22 10:10:00'`
+(UTC, this run's window) reproduced the same nine counts and the same sum, and
+`max(posted_at)` per zero channel confirms all five are genuinely quiet, not
+broken: watchplayboypteltd 2026-09-20, tagtimesingapore 2026-09-21 14:48 UTC,
+HengWatch 2026-09-21 13:15 UTC, and the two long-dead feeds sgwatchinsider
+(2026-01-01) and goldmanluxurysg (2025-08-10).
+
+Note: `web/routes/api-watch-listings.ts` and `web/routes/api-watch-references.ts`
+still carry the same uncommitted local modifications as previously logged
+(pre-existing, not from this run). The pipeline's route-drift check reports the
+deployed route matching the repo.
