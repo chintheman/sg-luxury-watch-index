@@ -486,3 +486,31 @@ Note: `web/routes/api-watch-listings.ts` and `web/routes/api-watch-references.ts
 still carry the same uncommitted local modifications as previously logged
 (pre-existing, not from this run). The pipeline's route-drift check reports the
 deployed route matching the repo.
+
+Update 2026-09-22 (12:00 SGT run): group still unreachable, group send NOT
+attempted. `hermes send --list telegram` → "no targets found for platform
+'telegram'. Configured: (none)" (unchanged from the 2026-09-20 12:00 and
+2026-09-21 18:00 entries — Hermes' Telegram target list is still empty), so the
+group send was skipped to preserve the per-turn limit. The single Telegram call
+went to the DM and delivered on the first attempt. Pipeline healthy: exit 0
+(no traceback; stdout ended "✅ Pipeline complete." and `data/scraper_log.json`
+recorded the run at 2026-09-22T12:11:18+08:00), 153 new messages across 14
+channels, composite `1.0975` (+0.57% 1d, +0.0062), 2 anomaly flags, route drift
+and page contract both clean. Export: 2232 listings (1880 priced) exported,
+12513 dropped (12249 expired, 264 sold, 0 dead links). Asset refreshed (verified
+live at `https://0xsteamboat.zo.space/data/watch-index.json`, HTTP 200, 420284
+bytes, reads back composite `1.0975` / `+0.57`).
+Zero-new-message channels this run (6): `ChuanwatchSG`, `watchcapital`,
+`goldmanluxurysg`, `watchplayboypteltd`, `sgwatchinsider`, `kbluxury`.
+
+Note on the zero-new list: stdout was captured in full to a file, so the list is
+read straight off the scraper's printed per-channel blocks, no DB reconstruction
+needed. Per-channel new counts: watchbooksg 55, watchexchangesg 51,
+watchdistrictsg 20, pngwatchdealer 15, thefinesttime 7, HengWatch 2,
+tagtimesingapore 2, watchhunts 1, and zeros for the six above. Sum = 153,
+exactly matching the scraper's reported total, which is what validates the list.
+
+Note: `web/routes/api-watch-listings.ts` and `web/routes/api-watch-references.ts`
+still carry the same uncommitted local modifications as previously logged
+(pre-existing, not from this run). The pipeline's route-drift check reports the
+deployed route matching the repo.
