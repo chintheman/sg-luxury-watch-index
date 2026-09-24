@@ -583,3 +583,73 @@ Note: `web/routes/api-watch-listings.ts` and `web/routes/api-watch-references.ts
 still carry the same uncommitted local modifications as previously logged
 (pre-existing, not from this run). The pipeline's route-drift check reports the
 deployed route matching the repo.
+
+Update 2026-09-24 (12:00 SGT run): group still unreachable, group send NOT
+attempted (`hermes send --list telegram` → "no targets found for platform
+'telegram'. Configured: (none)" — fifth consecutive run), so the single
+Telegram call went to the DM and delivered on the first attempt. Pipeline
+healthy: exit 0 (stdout ended "✅ Pipeline complete."), 140 new messages across
+14 channels, composite `1.1009` (+0.49% 1d, +0.0054; 7d +2.94%, 30d +6.55%),
+1 anomaly flag, route drift and page contract both clean. Export: 2299 listings
+(1925 priced) exported, 12820 dropped (12577 expired, 243 sold, 0 dead links).
+Asset refreshed (verified live at
+`https://0xsteamboat.zo.space/data/watch-index.json`, HTTP 200, md5
+`dd98745b11aa2dc10151ea60c58a33e5` matching local, reads back composite `1.1009`
+/ `+0.49`). Also fresh this run: signals (2002 confirmed sales, median 5d; 1737
+price cuts, median −2.08%), references (268 published, 138 full confidence),
+sheets exported to /home/workspace/watch-index-data.
+Zero-new-message channels this run (6): `watchcapital`, `goldmanluxurysg`,
+`sgwatchinsider`, `HengWatch`, `tagtimesingapore`, `watchhunts`.
+
+Note on the zero-new list: stdout was captured in full, so the list is read
+straight off the scraper's printed per-channel blocks. Per-channel new counts:
+watchexchangesg 63, watchbooksg 58, watchdistrictsg 5, pngwatchdealer 5,
+ChuanwatchSG 4, thefinesttime 3, kbluxury 1, watchplayboypteltd 1, and zeros for
+the six above. Sum = 140, exactly matching the scraper's reported total, which is
+what validates the list. Independent DB cross-check on
+`raw_messages.scraped_at >= '2026-09-24 04:00:00'` (UTC, this run's window)
+reproduced the same counts and the same sum. `max(posted_at)` per zero channel
+confirms all six are genuinely quiet, not broken: tagtimesingapore
+2026-09-23T02:55Z, watchhunts 2026-09-23T08:05Z, watchcapital 2026-09-22T09:25Z,
+HengWatch 2026-09-21T13:15Z, and the two long-dead feeds sgwatchinsider
+(2026-01-01) and goldmanluxurysg (2025-08-10).
+
+Note: `web/routes/api-watch-listings.ts` and `web/routes/api-watch-references.ts`
+still carry the same uncommitted local modifications as previously logged
+(pre-existing, not from this run). The pipeline's route-drift check reports the
+deployed route matching the repo.
+
+Update 2026-09-24 (18:00 SGT run): group still unreachable, group send NOT
+attempted (`hermes send --list telegram` → "no targets found for platform
+'telegram'. Configured: (none)" — sixth consecutive run), so the single
+Telegram call went to the DM and delivered on the first attempt. Pipeline
+healthy: exit 0 (stdout ended "✅ Pipeline complete."), 111 new messages across
+14 channels, composite `1.0943` (+0.21% 1d, +0.0023; 7d +2.70%, 30d +5.92%),
+1 anomaly flag, route drift and page contract both clean. Export: 2339 listings
+(1954 priced) exported, 12835 dropped (12576 expired, 259 sold, 0 dead links).
+Asset refreshed (verified live at
+`https://0xsteamboat.zo.space/data/watch-index.json`, HTTP 200, 422393 bytes,
+md5 `89f7e0626c6248b750f326f2caf1238f` matching local, reads back composite
+`1.0943` / `+0.21`). Also fresh this run: signals (2021 confirmed sales, median
+5d; 1739 price cuts, median −2.08%), references (268 published, 138 full
+confidence; 169 too thin), sheets exported to /home/workspace/watch-index-data.
+Zero-new-message channels this run (4): `goldmanluxurysg`, `watchplayboypteltd`,
+`sgwatchinsider`, `tagtimesingapore`.
+
+Note on the zero-new list: stdout was captured in full, so the list is read
+straight off the scraper's printed per-channel blocks. Per-channel new counts:
+watchexchangesg 36, watchbooksg 30, thefinesttime 11, HengWatch 11,
+pngwatchdealer 9, watchdistrictsg 4, ChuanwatchSG 3, watchhunts 3, kbluxury 2,
+watchcapital 2, and zeros for the four above. Sum = 111, exactly matching the
+scraper's reported total, which is what validates the list. Independent DB
+cross-check on `raw_messages.scraped_at >= '2026-09-24 10:10:00'` (UTC, this
+run's window) reproduced the same ten counts and the same sum. `max(posted_at)`
+per zero channel confirms all four are genuinely quiet, not broken:
+watchplayboypteltd 2026-09-23T10:25Z, tagtimesingapore 2026-09-23T02:55Z, and
+the two long-dead feeds sgwatchinsider (2026-01-01) and goldmanluxurysg
+(2025-08-10).
+
+Note: `web/routes/api-watch-listings.ts` and `web/routes/api-watch-references.ts`
+still carry the same uncommitted local modifications as previously logged
+(pre-existing, not from this run). The pipeline's route-drift check reports the
+deployed route matching the repo.
