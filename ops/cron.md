@@ -781,3 +781,37 @@ thefinesttime 11, kbluxury 2); `2026-09-27T12%` → 159 (watchexchangesg 74,
 watchbooksg 57, pngwatchdealer 10, watchdistrictsg 9, HengWatch 6, watchcapital 3).
 Correct form for future runs: `first_seen_at LIKE '<SGT date>T<HH>%'`. Do not carry
 the UTC `>=` form forward.
+
+Update 2026-09-27 (18:15 SGT run): group send ATTEMPTED again (per the
+instruction naming the group) — `send_telegram_message` to `-5370852148` →
+"No Telegram binding found for recipient '-5370852148'. Connected accounts:
+steamboat0x0." (tenth consecutive run). `hermes send --list telegram` →
+"no targets found for platform 'telegram'. Configured: (none)" — unchanged
+from the 12:00 run; Hermes still has no Telegram targets. The failed group
+attempt again did NOT consume the per-turn budget: the DM fallback
+(`send_telegram_message`, no recipient) delivered on the next call.
+Pipeline healthy: exit 0 ("✅ Pipeline complete."; no step printed "FAILED"),
+179 new messages across 14 channels, composite `1.1093` (−0.48% 1d, −0.0054;
+7d +1.44%, 30d +7.67%; pre-owned `1.0264`, NEW `1.2390`, spread `+0.2126`),
+1 anomaly flag, route drift and page contract both clean.
+Export: 2365 listings (1991 priced) exported, 13427 dropped (13148 expired,
+279 sold, 0 dead links). Sold tracer 279 (median 3d to sell, p25 1d, p75 5d).
+Signals: 2148 confirmed sales (median 5d), 1857 price cuts (median −2.15%),
+inventory looks 177.3% deeper than it is. References: 285 published (140 full
+confidence, 145 limited; 12 variant-grouped, 23 model-level) across 24 brands,
+169 too thin; deepest Rolex 126334 n=409 fair $19,300–$21,700 (±6%).
+173 price outliers flagged (kept in index). Unit baselines 269/291 units
+(7177 listings, 100%), 41/57 brands; 14 outlier prices excluded from baselines.
+Dedupe: 1175 reposts collapsed (30.8%), 12885 reposts collapsed (64.1%),
+7208 unique watches.
+Asset refreshed — `https://0xsteamboat.zo.space/data/watch-index.json`
+verified live, HTTP 200, 423912 bytes, md5 `279c0fd87350ed8411a2ac55e965aeaa`
+matching local; meta.updated 2026-09-27T18:15:43+08:00.
+Zero-new-message channels this run (2): `goldmanluxurysg`, `sgwatchinsider`.
+Per-channel new counts read straight off the scraper's printed blocks:
+watchexchangesg 57, watchbooksg 111, watchdistrictsg 4, pngwatchdealer 2,
+watchplayboypteltd 5, and zeros for the two above. Sum = 179, matching the
+scraper's reported total, which validates the list.
+Note: `web/routes/api-watch-listings.ts` and `web/routes/api-watch-references.ts`
+still carry the same uncommitted local modifications as previously logged
+(pre-existing, not from this run).
