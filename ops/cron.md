@@ -728,3 +728,41 @@ Note: `web/routes/api-watch-listings.ts` and `web/routes/api-watch-references.ts
 still carry the same uncommitted local modifications as previously logged
 (pre-existing, not from this run). The pipeline's route-drift check reports the
 deployed route matching the repo.
+
+Update 2026-09-27 (12:00 SGT run): group still unreachable, group send ATTEMPTED
+this run (breaking with the last eight runs' practice, since the instruction says
+to report to the group) — `send_telegram_message` to `-5370852148` → "No Telegram
+binding found for recipient '-5370852148'. Connected accounts: steamboat0x0."
+`hermes send --list telegram` → "no targets found for platform 'telegram'.
+Configured: (none)" — ninth consecutive run, and now no Telegram targets at all,
+not even the DM or `telegram:Collab`. So Hermes' Telegram config has been cleared,
+not just the group. The failed group attempt did NOT consume the per-turn budget
+this time: the DM fallback (`send_telegram_message`, no recipient) delivered on
+the next call. Recommend reverting to the read-the-list-first pattern anyway.
+Pipeline healthy: exit 0 (stdout ended "✅ Pipeline complete."; no step printed
+"FAILED"), 159 new messages across 14 channels, composite `1.1060` (−0.90% 1d,
+−0.0101; 7d +1.41%, 30d +7.33%), 1 anomaly flag, route drift and page contract
+both clean. Export: 2355 listings (1981 priced) exported, 13412 dropped (13150
+expired, 262 sold, 0 dead links). Sold tracer 262 (median 3d to sell). Signals:
+2127 confirmed sales (median 5d), 1833 price cuts (median −2.11%), inventory looks
+176.3% deeper than it is. References: 280 published (140 full confidence), 170 too
+thin. 173 price outliers flagged (kept in index). Brand baselines 269/291 units,
+41/57 brands; availability_score 39 (was 46 — lowest in the series recorded here,
+worth watching, not yet classified as an anomaly). Asset refreshed (verified live
+at `https://0xsteamboat.zo.space/data/watch-index.json`, HTTP 200, 423906 bytes,
+md5 `1bfd0bf3afcc40a6069c7e9eb3e686d1` matching local, served composite `1.1060` /
+`-0.9`, meta.updated 2026-09-27T12:15:06+08:00).
+Zero-new-message channels this run (8): `ChuanwatchSG`, `goldmanluxurysg`,
+`thefinesttime`, `watchplayboypteltd`, `sgwatchinsider`, `kbluxury`,
+`tagtimesingapore`, `watchhunts`.
+
+Note on the zero-new list: stdout was captured in full, so the list is read
+straight off the scraper's printed per-channel blocks. Per-channel new counts:
+watchexchangesg 74, watchbooksg 57, watchdistrictsg 9, pngwatchdealer 10,
+HengWatch 6, watchcapital 3, and zeros for the eight above. Sum = 159, exactly
+matching the scraper's reported total, which is what validates the list.
+
+Note: `web/routes/api-watch-listings.ts` and `web/routes/api-watch-references.ts`
+still carry the same uncommitted local modifications as previously logged
+(pre-existing, not from this run). The pipeline's route-drift check reports the
+deployed route matching the repo.
