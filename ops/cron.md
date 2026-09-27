@@ -747,8 +747,9 @@ expired, 262 sold, 0 dead links). Sold tracer 262 (median 3d to sell). Signals:
 2127 confirmed sales (median 5d), 1833 price cuts (median −2.11%), inventory looks
 176.3% deeper than it is. References: 280 published (140 full confidence), 170 too
 thin. 173 price outliers flagged (kept in index). Brand baselines 269/291 units,
-41/57 brands; availability_score 39 (was 46 — lowest in the series recorded here,
-worth watching, not yet classified as an anomaly). Asset refreshed (verified live
+41/57 brands; availability_score 39 (prior day 100, 30-day minimum 23 — a sharp
+single-day drop but inside the range this series has already covered, so recorded
+as a number to watch rather than classified as an anomaly). Asset refreshed (verified live
 at `https://0xsteamboat.zo.space/data/watch-index.json`, HTTP 200, 423906 bytes,
 md5 `1bfd0bf3afcc40a6069c7e9eb3e686d1` matching local, served composite `1.1060` /
 `-0.9`, meta.updated 2026-09-27T12:15:06+08:00).
