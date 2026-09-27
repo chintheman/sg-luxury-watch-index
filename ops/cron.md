@@ -678,9 +678,11 @@ straight off the scraper's printed per-channel blocks. Per-channel new counts:
 watchexchangesg 77, watchbooksg 65, pngwatchdealer 13, watchdistrictsg 13,
 thefinesttime 10, ChuanwatchSG 7, tagtimesingapore 1, and zeros for the seven
 above. Sum = 186, exactly matching the scraper's reported total, which is what
-validates the list. Independent DB cross-check on
-`raw_messages.first_seen_at >= '2026-09-25 04:00:00'` (UTC, this run's window)
-reproduced the same counts and the same sum. `max(posted_at)` per zero channel
+validates the list. Independent DB cross-check on `raw_messages.first_seen_at
+LIKE '2026-09-25T12%'` (SGT, this run's bucket) reproduced the same counts and
+the same sum. [Predicate corrected 2026-09-27: `first_seen_at` is SGT ISO, so
+the working form is a SGT-date LIKE bucket, not a UTC `>=` bound; the original
+UTC form returned 560 cumulative rows, not 186.] `max(posted_at)` per zero channel
 confirms all seven are genuinely quiet, not broken: watchcapital
 2026-09-24T05:50Z, kbluxury 2026-09-24T04:18Z, watchhunts 2026-09-24T07:39Z,
 HengWatch 2026-09-24T09:13Z, watchplayboypteltd 2026-09-23T10:25Z, and the two
@@ -716,8 +718,9 @@ straight off the scraper's printed per-channel blocks. Per-channel new counts:
 watchexchangesg 77, watchbooksg 62, pngwatchdealer 14, watchdistrictsg 13,
 thefinesttime 11, kbluxury 2, and zeros for the eight above. Sum = 179, exactly
 matching the scraper's reported total, which is what validates the list.
-Independent DB cross-check on `raw_messages.first_seen_at >= '2026-09-26
-04:00:00'` (UTC, this run's window) reproduced the same counts and the same sum.
+Independent DB cross-check on `raw_messages.first_seen_at LIKE '2026-09-26T12%'`
+(SGT, this run's bucket) reproduced the same counts and the same sum.
+[Predicate corrected 2026-09-27 — same defect as the 2026-09-25 entry above.]
 `max(posted_at)` per zero channel confirms all eight are genuinely quiet, not
 broken: ChuanwatchSG 2026-09-25T07:24Z, HengWatch 2026-09-25T09:33Z, watchhunts
 2026-09-25T06:30Z, watchplayboypteltd 2026-09-25T05:32Z, watchcapital
@@ -767,3 +770,14 @@ Note: `web/routes/api-watch-listings.ts` and `web/routes/api-watch-references.ts
 still carry the same uncommitted local modifications as previously logged
 (pre-existing, not from this run). The pipeline's route-drift check reports the
 deployed route matching the repo.
+
+Sweep carried out this run: both earlier entries' DB cross-check predicates were
+re-tested against `data/listings.db`. The counts they quote are right; the SQL was
+not reproducible as written. Verified per-bucket reproduction: `2026-09-25T12%` →
+186 (watchexchangesg 77, watchbooksg 65, pngwatchdealer 13, watchdistrictsg 13,
+thefinesttime 10, ChuanwatchSG 7, tagtimesingapore 1); `2026-09-26T12%` → 179
+(watchexchangesg 77, watchbooksg 62, pngwatchdealer 14, watchdistrictsg 13,
+thefinesttime 11, kbluxury 2); `2026-09-27T12%` → 159 (watchexchangesg 74,
+watchbooksg 57, pngwatchdealer 10, watchdistrictsg 9, HengWatch 6, watchcapital 3).
+Correct form for future runs: `first_seen_at LIKE '<SGT date>T<HH>%'`. Do not carry
+the UTC `>=` form forward.
