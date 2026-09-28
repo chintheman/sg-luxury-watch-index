@@ -917,3 +917,45 @@ the numbers reached the user; only the channel was wrong (email, not Telegram).
 `hermes` itself is healthy (`health` → status ok, v0.21.5) while holding no
 Telegram targets, so the missing piece remains bot group membership, unchanged
 for eleven runs.
+
+Update 2026-09-28 (18:00 SGT run): group still unreachable — and now Hermes holds
+no Telegram targets at all (`hermes send --list telegram` → "no targets found for
+platform 'telegram'. Configured: (none)"), a regression from the previous state
+where it at least listed `telegram:0xsteamboat` and `telegram:Collab`. Group send
+NOT attempted; per the 2026-09-15 pattern the single Telegram call went to the DM
+and delivered on the first attempt (1 call this turn, under the per-turn limit of
+3, so no repeat of the 2026-09-28 12:15 truncation).
+Pipeline healthy: exit 0, 162 new messages across 14 channels, composite `1.1112`
+(−0.12% 1d, −0.0013, from 1.1125), pre-owned `1.0387` / NEW `1.2545` / spread
+`+0.2158`, anchor 2026-04-02, 409 days tracked, 41/58 brands baselined.
+0 anomalies flagged (anomaly check clean on all six axes: listings 2324 with 0
+unresolved brands, sold tracer 298 at median 3d, signals 2189 sales / 1873 price
+cuts, references 295 published, index −0.12% with days_since_fresh=0, route drift
+and page contract both clean).
+Export: 2324 listings (1986 priced) exported, 13619 dropped (13321 expired, 298
+sold, 0 dead links); 13066 reposts collapsed (64.3%), 7244 unique watches;
+173 price outliers flagged and kept in the index; 14 outlier prices excluded from
+baselines; 269 of 292 unit baselines covering 7212 listings (100%).
+Asset refreshed (verified live at `https://0xsteamboat.zo.space/data/watch-index.json`,
+HTTP 200, 424966 bytes, md5 `be6b23a17fada3548e02d020858ce95c` matching local
+byte-for-byte, served composite `1.1112` / `-0.12`, meta.updated
+2026-09-28T18:13:14+08:00).
+Zero-new-message channels this run (5): `watchcapital`, `pngwatchdealer`,
+`sgwatchinsider`, `HengWatch`, `goldmanluxurysg`.
+
+Note on the zero-new list: stdout was piped through `tail -120`, so the list was
+rebuilt from `raw_messages.first_seen_at >= '2026-09-28T18:09:49'` (SGT, matching
+the run start recorded in `scraper_log.json`) and cross-checked against
+`scraped_at` in the UTC window `2026-09-28 10:09:49`–`10:10:30`. Both agree.
+Per-channel new counts: watchexchangesg 68, watchbooksg 65, thefinesttime 14,
+ChuanwatchSG 6, watchhunts 4, watchdistrictsg 2, kbluxury 1, tagtimesingapore 1,
+watchplayboypteltd 1 — sum 162, exactly matching the scraper's reported total,
+which is what validates the method. The five zeros are genuine quiet, not broken:
+`max(posted_at)` is pngwatchdealer 2026-09-27T17:58Z, watchcapital
+2026-09-26T10:33Z, HengWatch 2026-09-26T12:50Z, and the two long-dead feeds
+sgwatchinsider (2026-01-01) and goldmanluxurysg (2025-08-10).
+
+Note: `web/routes/api-watch-listings.ts` and `web/routes/api-watch-references.ts`
+still carry the same uncommitted local modifications as previously logged
+(pre-existing, not from this run). The pipeline's route-drift check reports the
+deployed route matching the repo.
