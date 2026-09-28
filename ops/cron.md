@@ -815,3 +815,63 @@ scraper's reported total, which validates the list.
 Note: `web/routes/api-watch-listings.ts` and `web/routes/api-watch-references.ts`
 still carry the same uncommitted local modifications as previously logged
 (pre-existing, not from this run).
+
+Update 2026-09-28 (12:15 SGT run): group still unreachable, group send ATTEMPTED
+(per the instruction naming the group) — `send_telegram_message` to `-5370852148`
+→ "No Telegram binding found for recipient '-5370852148'. Connected accounts:
+steamboat0x0." (eleventh consecutive run). `hermes send --list telegram` →
+"no targets found for platform 'telegram'. Configured: (none)" — unchanged;
+Hermes still has no Telegram targets (its API server itself is healthy,
+`health` → status ok, v0.21.5). The failed group attempt again did NOT consume
+the per-turn budget: the DM fallback (`send_telegram_message`, no recipient)
+delivered on the next call.
+Pipeline healthy: exit 0 ("✅ Pipeline complete."; no step printed "FAILED"),
+141 new messages across 14 channels, composite `1.1099` (−0.18% 1d, −0.0020;
+pre-owned `1.0377`, NEW `1.2545`, spread `+0.2168`), **0 anomaly flags** (first
+zero-flag run in recent memory — verified by hand rather than trusted: 0
+unbranded listings, sold tracer 279, reference cards 293 with 0 wide-spread and
+0 stale past 60 days, |1d move| well under the 8% alert threshold,
+days_since_fresh=0, route drift and page contract both clean), route drift and
+page contract both clean.
+Export: 2297 listings (1973 priced) exported, 13601 dropped (13322 expired,
+279 sold, 0 dead links). Sold tracer 279 (median 3d to sell, p25 1d, p75 5d;
+279 by reply link, 0 by edit). Signals: 2166 confirmed sales (median 5d), 1866
+price cuts (median −2.15%), inventory looks 178.6% deeper than it is.
+References: 293 published (139 full confidence, 154 limited; 12 variant-grouped,
+20 model-level) across 25 brands, 170 too thin, 23 groups too broad, 22 model
+cards leftovers; deepest Rolex 126334 n=410 fair $19,300–$21,700 (±6%). 173
+price outliers flagged (kept in index). Unit baselines 269/291 units (7183
+listings, 100%), 41/57 brands; 14 outlier prices excluded from baselines.
+Dedupe: 1157 reposts collapsed (31.0%), 12987 reposts collapsed (64.3%), 7214
+unique watches. Anchor date 2026-04-02, 409 days tracked.
+availability_score `33` — second consecutive sharp single-day drop (100 → 96 →
+33; 30-day minimum 23), inside the range this series has covered, so recorded
+as a number to watch rather than an anomaly.
+Asset refreshed (verified live at `https://0xsteamboat.zo.space/data/watch-index.json`,
+HTTP 200, 424926 bytes, md5 `74aaa8e34e91629cacfac03ca33e288f` matching local
+byte-for-byte, served composite `1.1099` / `-0.18`, meta.updated
+2026-09-28T12:12:55+08:00).
+Zero-new-message channels this run (9): `ChuanwatchSG`, `watchcapital`,
+`goldmanluxurysg`, `watchplayboypteltd`, `sgwatchinsider`, `HengWatch`,
+`kbluxury`, `tagtimesingapore`, `watchhunts`.
+
+Note on the zero-new list: stdout was captured in full (not piped through
+`tail`), so the list is read straight off the scraper's printed per-channel
+blocks. Per-channel new counts: watchbooksg 75, watchexchangesg 54,
+watchdistrictsg 5, pngwatchdealer 4, thefinesttime 3, and zeros for the nine
+above. Sum = 141, exactly matching the scraper's reported total. Independent
+`first_seen_at LIKE '2026-09-28T12%'` cross-check on `raw_messages` reproduced
+the same five channels and the same 141 total.
+`max(posted_at)` per zero channel confirms all nine are genuinely quiet, not
+broken: watchplayboypteltd 2026-09-27T09:37Z, watchcapital 2026-09-26T10:33Z,
+HengWatch 2026-09-26T12:50Z, watchhunts 2026-09-26T08:22Z, kbluxury
+2026-09-26T04:02Z, ChuanwatchSG 2026-09-25T07:24Z, tagtimesingapore
+2026-09-24T10:27Z, and the two long-dead feeds sgwatchinsider (2026-01-01) and
+goldmanluxurysg (2025-08-10).
+Also skipped as unusable this run: 1 untimestamped message each in
+watchdistrictsg and watchbooksg (no `<time>` element on the public page).
+
+Note: `web/routes/api-watch-listings.ts` and `web/routes/api-watch-references.ts`
+still carry the same uncommitted local modifications as previously logged
+(pre-existing, not from this run). The pipeline's route-drift check reports the
+deployed route matching the repo.
