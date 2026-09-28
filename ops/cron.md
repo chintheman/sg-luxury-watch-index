@@ -885,64 +885,35 @@ read-`hermes send --list telegram`-first pattern from the 2026-09-15 entry
 remains the correct one: when the list shows no Telegram targets for the group,
 skip the group attempt entirely and spend the single call on the DM.
 
-Update 2026-09-28 (12:15 SGT run): group still unreachable, group send ATTEMPTED
-(per the instruction naming the group) — `send_telegram_message` to
-`-5370852148` → "No Telegram binding found for recipient '-5370852148'.
-Connected accounts: steamboat0x0." (eleventh consecutive run). `hermes send
---list telegram` → "no targets found for platform 'telegram'. Configured:
-(none)". The failed group attempt then cost the DM fallback as well (per-turn
-limit of 3 on `send_telegram_message`, see the delivery note above), so the
-report went by EMAIL.
-Pipeline healthy: exit 0 (stdout ended "✅ Pipeline complete."; no step printed
-"FAILED"), 141 new messages across 14 channels, composite `1.1099` (−0.18% 1d,
-−0.0020; pre-owned `1.0377`, NEW `1.2545`, spread `+0.2168`), **0 anomaly flags**,
-route drift and page contract both clean.
-Export: 2297 listings (1973 priced) exported, 13601 dropped (13322 expired, 279
-sold, 0 dead links). Sold tracer 279 (median 3d to sell, p25 1d, p75 5d).
-Signals: 2166 confirmed sales (median 5d), 1866 price cuts (median −2.15%),
-inventory looks 178.6% deeper than it is. References: 293 published (139 full
-confidence, 154 limited; 12 variant-grouped, 20 model-level) across 25 brands,
-170 too thin, 23 groups too broad, 22 model cards leftovers; deepest Rolex 126334
-n=410 fair $19,300–$21,700 (±6%). 173 price outliers flagged (kept in index).
-Unit baselines 269/291 units (7183 listings, 100%), 41/57 brands; 14 outlier
-prices excluded from baselines. Missing baseline (16 brands): Arnold & Son,
-Konstantin Chaykin, Chronoswiss, Graham, Louis Moinet, Louis Erard, Oris,
-Bulgari, Chanel, Jacob & Co, Baltic, Baume & Mercier, Bedat, Jaquet Droz,
-Carl F. Bucherer, Fears. Top weights Rolex 0.196, Tudor 0.065, Cartier 0.051,
-AP 0.048, Omega 0.048. Anchor date 2026-04-02, 409 days tracked. Dedupe: 1157
-reposts collapsed (31.0%), 12987 reposts collapsed (64.3%), 7214 unique watches.
-Anchor-relative driver line this run: "moved down 0.2% today. led by Breitling,
-Grand Seiko, Jaeger-LeCoultre. with Longines, Audemars Piguet, Zenith pulling the
-other way."
-Asset refreshed — `https://0xsteamboat.zo.space/data/watch-index.json` verified
-live, HTTP 200, 424926 bytes, md5 `74aaa8e34e91629cacfac03ca33e288f` matching
-local, served composite `1.1099` / `-0.18`, meta.updated
-2026-09-28T12:12:55+08:00.
-Zero-new-message channels this run (9): `ChuanwatchSG`, `watchcapital`,
-`goldmanluxurysg`, `watchplayboypteltd`, `sgwatchinsider`, `HengWatch`,
-`kbluxury`, `tagtimesingapore`, `watchhunts`.
+Reconciliation (2026-09-28 12:15 SGT run) — duplicate log entries, and the
+second-writer question resolved.
 
-Note on the zero-new list: stdout was captured in full, so the list is read
-straight off the scraper's printed per-channel blocks. Per-channel new counts:
-watchbooksg 75, watchexchangesg 54, watchdistrictsg 5, pngwatchdealer 4,
-thefinesttime 3, and zeros for the nine above. Sum = 141, exactly matching the
-scraper's reported total, which validates the list. Independent DB cross-check on
-`raw_messages.first_seen_at LIKE '2026-09-28T12%'` (SGT, this run's bucket)
-reproduced the same five channels with the same counts and the same sum of 141.
-`max(posted_at)` per zero channel confirms all nine are genuinely quiet, not
-broken: watchplayboypteltd 2026-09-27T09:37Z, watchcapital 2026-09-26T10:33Z,
-HengWatch 2026-09-26T12:50Z, watchhunts 2026-09-26T08:22Z, kbluxury
-2026-09-26T04:02Z, ChuanwatchSG 2026-09-25T07:24Z, tagtimesingapore
-2026-09-24T10:27Z, and the two long-dead feeds sgwatchinsider (2026-01-01) and
-goldmanluxurysg (2025-08-10).
+This run wrote its log three times inside 24 seconds, which is why the file
+carried two near-identical 2026-09-28 12:15 entries (`ef57788`, then `8378039`)
+plus the delivery note (`26bfc3f`). The duplicate has been removed rather than
+left in place as the 2026-09-17 pair was, since every fact in it was already
+recorded above. Two details existed only in the removed copy and are preserved
+here: the anchor-relative driver line ("moved down 0.2% today. led by Breitling,
+Grand Seiko, Jaeger-LeCoultre. with Longines, Audemars Piguet, Zenith pulling
+the other way.") and the 16 brands with no baseline (Arnold & Son, Konstantin
+Chaykin, Chronoswiss, Graham, Louis Moinet, Louis Erard, Oris, Bulgari, Chanel,
+Jacob & Co, Baltic, Baume & Mercier, Bedat, Jaquet Droz, Carl F. Bucherer,
+Fears).
 
-Number to watch: `availability_score` 33 (prior day 96, 30-day minimum 23) —
-the second sharp single-day drop in three runs, still inside the range this
-series has covered, so recorded rather than classified as an anomaly. Also two
-channels each skipped 1 message with no timestamp (watchdistrictsg, watchbooksg)
-— the scraper prints these as unusable because every consumer date-filters.
+The 2026-09-19 provenance note flagged an unidentified process appending to this
+file. That is now explained well enough to stop treating it as an intruder: all
+three 2026-09-28 12:15 writers share one `send_telegram_message` per-turn budget.
+A later context in this same run hit "You have already called it 3 times, which
+exceeds the per-turn limit of 3" without having made any of those calls itself —
+so the parallel writers are concurrent agent contexts of this same automation
+run, not a separate writer with independent access. Two contexts racing on one
+run is still a defect (it duplicated the log and split the delivery budget), and
+the practical symptom to expect is a duplicate report or a truncated one.
 
-Note: `web/routes/api-watch-listings.ts` and `web/routes/api-watch-references.ts`
-still carry the same uncommitted local modifications as previously logged
-(pre-existing, not from this run). The pipeline's route-drift check reports the
-deployed route matching the repo.
+Delivery for this run is CONFIRMED, by email, verified this turn in Gmail:
+message id `1a0e639bddc83723`, snippet begins "Index: 1.1099 (−0.0020, −0.18% d/d
+— from 1.1119) Pre-owned 1.0377 | NEW 1.2545 | spread +0.2168 ... Export:". So
+the numbers reached the user; only the channel was wrong (email, not Telegram).
+`hermes` itself is healthy (`health` → status ok, v0.21.5) while holding no
+Telegram targets, so the missing piece remains bot group membership, unchanged
+for eleven runs.
