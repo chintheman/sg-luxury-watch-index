@@ -875,3 +875,12 @@ Note: `web/routes/api-watch-listings.ts` and `web/routes/api-watch-references.ts
 still carry the same uncommitted local modifications as previously logged
 (pre-existing, not from this run). The pipeline's route-drift check reports the
 deployed route matching the repo.
+
+Delivery note (2026-09-28 12:15 SGT run): the group attempt cost more than one
+call this time. The group send failed ("No Telegram binding found"), then the DM
+fallback was refused with "STOP: Do not call send_telegram_message again this
+turn. You have already called it 3 times, which exceeds the per-turn limit of
+3." So the report went out by EMAIL instead (same as 2026-09-15). The
+read-`hermes send --list telegram`-first pattern from the 2026-09-15 entry
+remains the correct one: when the list shows no Telegram targets for the group,
+skip the group attempt entirely and spend the single call on the DM.
