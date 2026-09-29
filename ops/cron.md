@@ -959,3 +959,27 @@ Note: `web/routes/api-watch-listings.ts` and `web/routes/api-watch-references.ts
 still carry the same uncommitted local modifications as previously logged
 (pre-existing, not from this run). The pipeline's route-drift check reports the
 deployed route matching the repo.
+
+Update 2026-09-29 (12:00 SGT run): unchanged. `hermes send --list telegram`
+now returns `hermes send: no targets found for platform 'telegram'. Configured:
+(none)` — the DM and the `telegram:Collab` group that were still listed on
+2026-09-13 have gone too, so there is currently no Hermes Telegram route at all,
+not just a missing group. Zo's own `send_telegram_message` has no group targeting
+parameter (recipient selects a connected account, not a chat), so the group
+remains out of reach. Report delivered to the user's DM.
+
+Pipeline healthy: exit 0, `pipeline.py` end to end, 175 new messages across 14
+channels, composite 1.0837 (−0.0325 / −2.91% 1d; prev closes 09-27 1.1316,
+09-28 1.1162), 2,297 listings exported (1,985 priced), dropped 13,912 (13,630
+expired / 282 sold / 0 dead links), 177 price outliers kept in index and listed
+for review, anomaly check clean, route drift and page contract both clean.
+Space asset `/data/watch-index.json` re-uploaded: HTTP 200, 426,333 bytes,
+byte-count matches `data/index.json` on disk.
+
+Zero-new-message channels this run (7): `watchcapital`, `goldmanluxurysg`,
+`watchplayboypteltd`, `sgwatchinsider`, `kbluxury`, `tagtimesingapore`,
+`watchhunts`.
+
+Note: `web/routes/api-watch-listings.ts` and `web/routes/api-watch-references.ts`
+still carry the same uncommitted local modifications as previously logged
+(pre-existing, not from this run).
