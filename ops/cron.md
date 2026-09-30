@@ -1027,3 +1027,44 @@ Note: `web/routes/api-watch-listings.ts` and `web/routes/api-watch-references.ts
 still carry the same uncommitted local modifications as previously logged
 (pre-existing, not from this run). The pipeline's route-drift check reports the
 deployed route matching the repo.
+
+Update 2026-09-30 (12:00 SGT run): unchanged. Group send to `-5370852148`
+retried and failed identically — `ValueError: No Telegram binding found for
+recipient '-5370852148'. Connected accounts: steamboat0x0.` Group delivery has
+now failed on every run since 2026-08-10; the DM fallback works and was used.
+
+Pipeline healthy: exit 0, `pipeline.py` end to end, 161 new messages across 14
+channels, composite `1.0928` (−0.0092 / −0.83% 1d; prev closes 09-28 1.1366,
+09-29 1.1020), 2,287 listings exported (1,970 priced), dropped 14,146 (13,871
+expired / 275 sold / 0 dead links), 1,054 in-run reposts collapsed (29.1%),
+7,316 unique watches remain, 177 price outliers flagged and kept in the index,
+14 outlier prices excluded from baselines, 269 of 292 unit baselines covering
+7,284 listings (100%). Reference set: 302 published (143 full confidence, 165
+too thin). Anomaly check clean on all six axes (listings 2,287 with 0 unresolved
+brands, sold tracer 275 at median 3d, signals 2,229 confirmed sales / 1,892 price
+cuts, references 302, index −0.83% with days_since_fresh=0, route drift and page
+contract both clean) — **0 lines under "Anomalies flagged for review"**.
+
+Space asset `/data/watch-index.json` re-uploaded and verified: HTTP 200, 427,320
+bytes, md5 `1265d23add37b5087223a8120d516a7a` matching `data/index.json`
+byte-for-byte, served composite `1.0928` / `-0.83`, meta.updated
+2026-09-30T12:16:53+08:00.
+
+Zero-new-message channels this run (7): `watchcapital`, `goldmanluxurysg`,
+`watchplayboypteltd`, `sgwatchinsider`, `HengWatch`, `kbluxury`, `watchhunts`.
+stdout was captured in full (not piped through `tail`), so the seven zeros come
+straight from the scraper's own per-channel output; cross-checked against
+`raw_messages.first_seen_at >= '2026-09-30T12:09:00'`, where per-channel counts
+sum to 161 — exactly the scraper's reported total. All seven are genuine quiet,
+not broken: `max(posted_at)` is watchcapital 2026-09-26T10:33Z, watchhunts
+2026-09-28T09:16Z, HengWatch 2026-09-28T17:26Z, kbluxury 2026-09-29T04:11Z,
+watchplayboypteltd 2026-09-29T06:27Z, and the two long-dead feeds sgwatchinsider
+(2026-01-01) and goldmanluxurysg (2025-08-10).
+The scrape covers 14 channels; `schonwatch` remains in `raw_messages` from
+historical runs but is no longer in the channel list, so it is not a quiet
+channel — it is retired.
+
+Note: `web/routes/api-watch-listings.ts` and `web/routes/api-watch-references.ts`
+still carry the same uncommitted local modifications as previously logged
+(pre-existing, not from this run). The pipeline's route-drift check reports the
+deployed route matching the repo.
