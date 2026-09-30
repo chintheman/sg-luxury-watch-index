@@ -1068,3 +1068,28 @@ Note: `web/routes/api-watch-listings.ts` and `web/routes/api-watch-references.ts
 still carry the same uncommitted local modifications as previously logged
 (pre-existing, not from this run). The pipeline's route-drift check reports the
 deployed route matching the repo.
+
+Update 2026-09-30 (18:00 SGT run): pipeline.py end to end, exit 0. 86 new
+messages across 14 channels (1 skipped, no timestamp). Composite `1.0936`
+(`-0.0069` / `-0.63%` 1d; prev close 09-30 12:00 `1.1005`; 7d `-1.61%`, 30d
+`+4.20%`), pre-owned `1.0482` / NEW `1.2676` / spread `+0.2194`, anchor
+2026-04-02, 411 days tracked, 41/58 brands baselined.
+Export: 2,305 listings (1,977 priced) exported, 14,157 dropped (13,867 expired,
+290 sold, 0 dead links); 1,084 reposts collapsed in-run (29.5%); 13,339
+collapsed / 7,333 unique watches in index; 177 price outliers flagged and kept;
+14 outlier prices excluded from baselines; 271 of 294 unit baselines covering
+7,301 listings (100%). Link check: 300/2,305 verified.
+Signals: 2,246 confirmed sales (median 5d), 1,893 price cuts (median -2.16%),
+inventory looks 180.4% deeper than it is. References: 302 published (144 full
+confidence), 166 too thin.
+2 anomalies flagged this run (first non-clean run since 09-29): (1) 1 listing
+with no resolved brand — Credor GCCD993, parser/brands.py coverage gap;
+(2) 1 reference card with >60% asking spread, rolex-126515ln at 63.3%,
+suggesting one reference number covers several distinct watches.
+Route drift and page contract both clean. days_since_fresh=0.
+Space asset `/data/watch-index.json` re-uploaded: HTTP 200, 427,291 bytes,
+md5 `6aa84eeae56ad7ad2c95dfac6b046c64`, byte-identical to `data/index.json`
+on disk.
+Zero-new-message channels this run (4): `watchcapital`, `goldmanluxurysg`,
+`sgwatchinsider`, `tagtimesingapore`.
+Delivery: group still unreachable; report delivered to user DM.
