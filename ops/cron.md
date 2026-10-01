@@ -1093,3 +1093,59 @@ on disk.
 Zero-new-message channels this run (4): `watchcapital`, `goldmanluxurysg`,
 `sgwatchinsider`, `tagtimesingapore`.
 Delivery: group still unreachable; report delivered to user DM.
+
+Update 2026-10-01 (12:00 SGT run): pipeline.py end to end, exit 0. 294 new
+messages across 14 channels. Composite `1.0945` (`+0.0177` / `+1.64%` 1d;
+7d `-1.60%`, 30d `+3.74%`), pre-owned `1.0464` / NEW `1.2918` / spread
+`+0.2454`, anchor 2026-04-02, 412 days tracked, 41/58 brands baselined.
+
+Day-over-day caveat: this run restated the 2026-09-30 series value to `1.0768`
+from the `1.0936` the 09-30 18:00 run reported for that same date. The printed
+`+1.64%` is therefore measured against the restated prior close; against the
+last *reported* close the move is `+0.0009` (`+0.08%`). The restatement is
+`-0.0168` on a settled date, larger than the usual rolling-window revision —
+worth watching, because it means a reported 1d move can be an artifact of the
+prior close being rewritten rather than a genuine move.
+
+Export: 2,303 listings (2,000 priced) exported, 14,326 dropped (14,047 expired,
+279 sold, 0 dead links); 1,136 reposts collapsed in-run (30.6%); 7,369 unique
+watches remain (13,555 collapsed); 178 price outliers flagged and kept; 15
+outlier prices excluded from baselines; 271 of 294 unit baselines covering
+7,337 listings (100%). Link check: 300/2,303 verified.
+
+Signals: 2,261 confirmed sales (median 5d), 1,947 price cuts (median -2.22%),
+inventory looks 182.4% deeper than it is. References: 302 published (147 full
+confidence, 155 limited; 166 too thin, 24 too broad, 22 model-card leftovers),
+deepest Rolex 126334 n=429 fair $19,300-$21,700 (+-6%).
+
+2 anomalies flagged this run: (1) 1 published listing with no resolved brand —
+Credor "Ice at Dawn" GCCD993, parser/brands.py coverage gap; (2) 2 reference
+cards with >60% asking spread, widest rolex-124300 at 87.0%.
+Route drift and page contract both clean. days_since_fresh=0.
+
+Space asset `/data/watch-index.json` re-uploaded and verified: HTTP 200,
+428,473 bytes, md5 `2e25c6563375129065dae711419aa618`, byte-identical to
+`data/index.json` on disk. Served composite reads back `1.0945` / `+1.64`.
+
+Zero-new-message channels this run (6): `watchcapital`, `goldmanluxurysg`,
+`sgwatchinsider`, `HengWatch`, `tagtimesingapore`, `watchhunts`. stdout was
+captured in full (not piped through `tail`), so the zeros come straight from
+the scraper's own per-channel output; the 14 printed counts
+(6+5+183+17+75+0+0+4+2+0+0+2+0+0) sum to 294, exactly the scraper's reported
+total, which is what validates the list. The two dead feeds (`goldmanluxurysg`
+since 2025-08-10, `sgwatchinsider` since 2026-01-01) are quiet by definition;
+the other four are recent-but-quiet, not broken.
+
+Delivery: group `-5370852148` still unreachable and the group send was NOT
+attempted this run. `hermes send --list telegram` now returns
+"no targets found for platform 'telegram'. Configured: (none)" — Hermes'
+Telegram scope has gone from "group only" to nothing at all since the
+2026-09-13 note. The single `send_telegram_message` call went to the DM and
+delivered on the first attempt, avoiding the per-turn limit. This remains the
+pattern to use. To restore group delivery: add Zo's bot `@steamboat0x0` to
+group `-5370852148` as admin and change the automation's delivery target.
+
+Note: `web/routes/api-watch-listings.ts` and `web/routes/api-watch-references.ts`
+still carry the same uncommitted local modifications as previously logged
+(pre-existing, not from this run). The pipeline's route-drift check reports the
+deployed route matching the repo.
