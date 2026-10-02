@@ -1253,3 +1253,59 @@ for platform 'telegram'. Configured: (none)". Pattern held: group unreachable,
 DM carried the report, group not retried. To restore group delivery: add Zo's
 bot `@steamboat0x0` to group `-5370852148` as admin and change the
 automation's delivery target.
+
+Update 2026-10-02 (12:00 SGT run): pipeline.py end to end, exit 0. 165 new
+messages across 14 channels. Composite `1.0951` (`-0.0060` / `-0.54%` 1d;
+7d `-2.48%`, 30d `+6.10%`, 90d `-4.74%`), pre-owned `1.0466` / NEW `1.2516` /
+spread `+0.2050`, anchor 2026-04-02, 413 days tracked, 41/58 brands baselined.
+
+Day-over-day restatement — third consecutive run, now larger. The 2026-10-01
+close, reported as `1.0934` eighteen hours ago, is stored as `1.1011` today
+(`+0.0070`, `+0.77%` of the prior close). The 2026-09-30 close was restated
+again too, `1.0832` → `1.0873`. Against the last *reported* close today's move
+is `+0.0017` (`+0.16%`), against the stored close it is `-0.54%`. So the
+printed 1d figure is now an artifact of the rewrite, not a market move —
+published in the report with that caveat attached. This is the same defect
+flagged on 09-30 and 10-01; it is escalating, not noise. Suspects unchanged
+(21-day rolling window + late listprice edits rewriting the stored series).
+Worth a dedicated fix: either freeze closes once published, or recompute the
+prior close from a snapshot rather than from live data.
+
+Export: 2,338 listings (2,017 priced) exported, 14,491 dropped (14,210 expired,
+281 sold, 0 dead links); 1,096 reposts collapsed in-run (29.5%); 7,422 unique
+watches remain (13,741 collapsed); 181 price outliers flagged and kept; 15
+outlier prices excluded from baselines; 273 of 296 unit baselines covering
+7,390 listings (100%). Link check: 300/2,338 verified.
+
+Signals: 2,296 confirmed sales (median 5d), 1,967 price cuts (median -2.21%),
+inventory looks 183.6% deeper than it is. References: 306 published (146 full
+confidence, 160 limited; 167 too thin, 24 too broad, 24 model-card leftovers),
+deepest Rolex 126334 n=435 fair $19,300-$21,700 (+-6%).
+
+2 anomalies flagged this run: (1) 1 published listing with no resolved brand —
+Credor "Ice at Dawn" GCCD993, parser/brands.py coverage gap (same class as the
+10-01 run); (2) 2 reference cards with >60% asking spread, widest rolex-124300
+at 87.0%. Route drift and page contract both clean. days_since_fresh=0.
+
+Space asset `/data/watch-index.json` re-uploaded and verified: HTTP 200,
+429,759 bytes, md5 `0f3fc8596d09dd8cf48b0d9568426470`, byte-identical to
+`data/index.json` on disk. Served composite reads back `1.0951` / `-0.54`.
+
+Zero-new-message channels this run (7): `watchcapital`, `goldmanluxurysg`,
+`watchplayboypteltd`, `sgwatchinsider`, `kbluxury`, `tagtimesingapore`,
+`watchhunts`. Per-channel counts (19+4+53+14+59+0+0+13+0+0+3+0+0+0) sum to
+165, exactly the scraper's reported total, which is what validates the list.
+`watchcapital` and `tagtimesingapore` were both zero-new here after printing 2
+new messages at the previous run — consistent with the flapping pair flagged on
+10-01, not a new dead feed. `goldmanluxurysg` and `sgwatchinsider` remain dead
+by definition (last post 2025-08-10 and 2026-01-01 respectively).
+
+Delivery: group `-5370852148` still unreachable. `send_telegram_message` to the
+group was attempted once this run and failed with "No Telegram binding found for
+recipient '-5370852148'. Connected accounts: steamboat0x0." The DM fallback then
+hit the per-turn limit on `send_telegram_message` before it could send, so the
+report went out by email instead — the second time this has happened (see
+2026-09-13 18:00). Fix for the flapping delivery: stop attempting the group
+send first, since it has failed on every run since 2026-08-10; spend the first
+call on the DM. To restore true group delivery, add Zo's bot `@steamboat0x0` to
+group `-5370852148` as admin, or repoint the automation's delivery target.
