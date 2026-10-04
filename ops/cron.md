@@ -1485,3 +1485,67 @@ platform 'telegram'". The DM fallback then carried the report on the second
 call and succeeded, so the per-turn limit was not hit with two calls. To
 restore true group delivery: add Zo's bot `@steamboat0x0` to group
 `-5370852148` as admin, or repoint the automation's delivery target.
+
+Update 2026-10-04 (18:00 SGT run): pipeline.py end to end, exit 0, all seven
+steps green. 228 new messages across 14 channels. Composite `1.1074`
+(`+0.0124` / `+1.13%` 1d; 7d `-3.71%`, 30d `+5.99%`, 90d `+0.17%`),
+pre-owned `1.0345` / NEW `1.2599` / spread `+0.2254`, anchor 2026-04-02,
+415 days tracked, 41/58 brands baselined. Driver line: up led by IWC,
+Audemars Piguet, Chopard, with TAG Heuer, Omega, Breitling pulling the
+other way.
+
+Day-over-day restatement — seventh consecutive run, and now twice in a
+single day. The 2026-10-03 close, reported as `1.1017` at 18:00 yesterday,
+was stored as `1.0842` at 12:00 today and is stored as `1.0950` now
+(`1.1017 → 1.0842 → 1.0950`). Against the last *reported* close (`1.1055`
+at 12:00 today) today's move is `+0.0019` (`+0.17%`); against the stored
+close it is `+1.13%`. Same defect as 09-30 through 10-04 12:00; still not
+fixed. Suspects unchanged (21-day rolling window + late listprice edits
+rewriting the stored series). The 10-03 close has now moved 6.7bp twice in
+24h — the series is being rewritten in place faster than the restatement
+itself can be reported, which strengthens the case for freezing closes once
+published over recomputing the prior close from live data. Observed
+restatement magnitudes across the run: 0.36% → 0.51% → 1.59% → 0.61% of the
+prior reported close.
+
+Export: 2,349 listings (2,027 priced) exported, 14,838 dropped (14,524
+expired, 314 sold, 0 dead links); 1,176 reposts collapsed in-run (30.6%);
+7,564 unique watches remain (14,170 cumulative collapsed); 181 price
+outliers flagged and kept; 13 outlier prices excluded from baselines; 274
+of 297 unit baselines covering 7,532 listings (100%). Link check: 300/2,349
+verified (capped). Sold tracer: 314 marked sold, all 314 by reply link, 0
+by edit, median 3d to sell.
+
+Signals: 2,432 confirmed sales (median 5d), 1,992 price cuts (median
+-2.21%), inventory looks 185.8% deeper than it is. References: 312
+published (146 full confidence, 166 limited; 169 too thin, 26 too broad,
+23 model-card leftovers), deepest Rolex 126334 n=445 fair $19,300-$21,700
+(+-6%).
+
+2 anomalies flagged this run: (1) 2 published listings with no resolved
+brand — a parser/brands.py coverage gap, example text is a Carousell Kermit
+post now surfacing through the dealer channels; (2) 1 reference card with
+>60% asking spread, widest rolex-124300 at 80.7% (unchanged from 10-03).
+Route drift and page contract both clean. days_since_fresh=0.
+
+Space asset `/data/watch-index.json` re-uploaded and verified: HTTP 200,
+431,739 bytes, md5 `bec2f5856daa531a969c4d6f90780854`, byte-identical to
+`data/index.json` on disk. Served composite reads back `1.1074` / `+1.13`.
+
+Zero-new-message channels this run (8): `ChuanwatchSG`, `HengWatch`,
+`goldmanluxurysg`, `sgwatchinsider`, `tagtimesingapore`, `thefinesttime`,
+`watchhunts`, `kbluxury`. Per-channel counts
+(103+80+32+0+0+10+0+1+2+0+0+0+0+0) sum to 228, exactly the scraper's
+reported total, which validates the list. `goldmanluxurysg` (last post
+2025-08-10) and `sgwatchinsider` (2026-01-01) remain dead by definition;
+`HengWatch` (last post 10-03 12:34) and `thefinesttime` (10-03 10:56)
+zeroed after printing at 12:00 today — flapping, not dead. `schonwatch`
+still absent from CHANNELS.
+
+Delivery: group send was NOT attempted. `hermes send --list telegram`
+returned "no targets found for platform 'telegram'" (Hermes' Telegram
+credentials still rejected/cleared), so group `-5370852148` remains absent
+from every bot's scope and the single Telegram call went to the user's DM,
+where it succeeded. To restore true group delivery: add Zo's bot
+`@steamboat0x0` to group `-5370852148` as admin, or repoint the automation's
+delivery target.
