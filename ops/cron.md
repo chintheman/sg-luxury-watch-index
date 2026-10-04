@@ -1470,7 +1470,7 @@ Zero-new-message channels this run (8): `ChuanwatchSG`, `watchcapital`,
 `goldmanluxurysg`, `watchplayboypteltd`, `sgwatchinsider`, `kbluxury`,
 `tagtimesingapore`, `watchhunts`. Per-channel counts
 (14+0+69+13+70+0+0+3+0+0+4+0+0+0) sum to 173, exactly the scraper's
-reported total, which validates the list. `goalmanluxurysg` (last post
+reported total, which validates the list. `goldmanluxurysg` (last post
 2025-08-10) and `sgwatchinsider` (2026-01-01) remain dead by definition;
 `HengWatch` (4) returned to printing after zeroing at 10-03 18:00, and
 `ChuanwatchSG` printed 0 again after 11 at 10-03 18:00 — flapping, not
