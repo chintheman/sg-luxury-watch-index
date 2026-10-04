@@ -159,7 +159,10 @@ export default async (c: Context) => {
       } : null,
     });
   } catch (e: any) {
-    return c.json({ error: e.message }, 500);
+    // Never return e.message — it discloses server filesystem paths to the
+    // public internet. Log it here; give the caller a generic body.
+    console.error(`[api-watch-listings] `, e);
+    return c.json({ error: "internal error" }, 500);
   }
 };
 
