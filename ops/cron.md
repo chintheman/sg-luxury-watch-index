@@ -1783,3 +1783,56 @@ returns "no targets found for platform 'telegram'", so group
 the user's DM (report + correction), both succeeded. To restore true group
 delivery: add Zo's bot `@steamboat0x0` to group `-5370852148` as admin, or
 repoint the automation's delivery target.
+
+Update 2026-10-07 (12:00 SGT run): Pipeline healthy — exit 0, `pipeline.py` end
+to end. 184 new messages across 14 channels. Composite `1.1277` (`-0.0041` /
+`-0.36%` 1d; prev stored close 10-06 `1.1318`; 7d `+2.22%`, 30d `+8.81%`,
+90d `+2.57%`), pre-owned `1.0056` / NEW `1.2646` / spread `+0.2590`, anchor
+2026-04-02, 418 days tracked, 42/58 brands baselined. Driver line: down led by
+Omega, Bvlgari, Panerai, with Breitling, Grand Seiko, IWC pulling the other way.
+
+Restatement again — twelfth consecutive run. The 10-06 close, reported as
+`1.1328` at 18:00 yesterday, is stored as `1.1318` now. So the reported
+`-0.36%` is a stored-vs-stored comparison; against what was actually reported
+at 18:00 yesterday the move is `-0.45%`. Same defect as 09-30 onward; suspects
+unchanged (21-day rolling window + late listprice edits rewriting the stored
+series).
+
+Export: 2,312 listings (2,035 priced) exported, 15,308 dropped (14,977
+expired, 320 sold, 11 dead links); 1,094 reposts collapsed in-run (29.3%);
+7,702 unique watches remain; 185 price outliers flagged and kept; 13 outlier
+prices excluded from baselines; 280 of 302 unit baselines covering 7,671
+listings (100%). Link check: 300/2,312 verified (capped). Sold tracer: 320
+marked sold, all 320 by reply link, 0 by edit, median 3d to sell (p25 1d,
+p75 5d).
+
+Signals: 2,528 confirmed sales (median 5d), 2,036 price cuts (median -2.22%),
+inventory looks 188.6% deeper than it is. References: 319 published (152 full
+confidence, 167 limited; 11 variant-grouped, 22 model-level, across 26 brands;
+161 too thin, 26 groups too broad, 22 model-card leftovers), deepest Rolex
+126334 n=458 fair $19,300-$21,700 (+-6%).
+
+1 anomaly flagged this run: 3 published listings with no resolved brand —
+parser/brands.py coverage gap, example is the Carousell blue-degrade DJ36
+post still surfacing through the dealer channels. Route drift and page
+contract both clean. days_since_fresh=0.
+
+Space asset `/data/watch-index.json` re-uploaded and verified: HTTP 200,
+435,087 bytes, md5 `162d9c4d9480ca2908d635fb2ea236b4`, byte-identical to
+`data/index.json` on disk. Served composite reads back `1.1277` / `-0.0041`,
+meta.updated 2026-10-07T12:17:30+08:00.
+
+Zero-new-message channels this run (6): `watchcapital`, `goldmanluxurysg`,
+`watchplayboypteltd`, `sgwatchinsider`, `tagtimesingapore`, `watchhunts`.
+Per-channel counts (2+8+70+17+73+0+0+8+0+0+4+2+0+0) sum to 184, exactly the
+scraper's reported total, which validates the list. `goldmanluxurysg` (last
+post 2025-08-10) and `sgwatchinsider` (2026-01-01) remain dead by definition;
+`watchplayboypteltd` and `tagtimesingapore` zeroed after printing at 18:00
+yesterday — flapping, not dead. `schonwatch` still absent from CHANNELS.
+
+Delivery: group send was NOT attempted — `hermes send --list telegram` returns
+"no targets found for platform 'telegram'", so group `-5370852148` remains
+outside every bot's scope. The single Telegram call went to the user's DM,
+where it succeeded. To restore true group delivery: add Zo's bot
+`@steamboat0x0` to group `-5370852148` as admin, or repoint the automation's
+delivery target.
