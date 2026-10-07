@@ -1836,3 +1836,64 @@ outside every bot's scope. The single Telegram call went to the user's DM,
 where it succeeded. To restore true group delivery: add Zo's bot
 `@steamboat0x0` to group `-5370852148` as admin, or repoint the automation's
 delivery target.
+
+Update 2026-10-07 (18:00 SGT run): Pipeline healthy — exit 0, `pipeline.py` end
+to end. 135 new messages across 14 channels. Composite `1.1275` (`-0.0029` /
+`-0.26%` 1d; prev stored close 10-06 `1.1304`; 7d `+1.75%`, 30d `+9.17%`,
+90d `+2.57%`), pre-owned `1.0082` / NEW `1.2651` / spread `+0.2569`, anchor
+2026-04-02, 418 days tracked, 42/58 brands baselined. Driver line: down led by
+Bvlgari, Panerai, IWC, with Breitling, Blancpain, Jaeger-LeCoultre pulling the
+other way. Availability 56/100.
+
+Restatement again — thirteenth consecutive run. The 10-06 close, reported as
+`1.1318` at 12:00 today, is stored as `1.1304` now, and the 10-07 12:00 value
+also moved `1.1277` -> `1.1275`. So the reported `-0.26%` is a stored-vs-stored
+comparison; against what was actually reported at 12:00 today the move is
+`-0.16%`. Same defect as 09-30 onward; suspects unchanged (21-day rolling
+window + late listprice edits rewriting the stored series).
+
+Export: 2,389 listings (2,089 priced) exported, 15,297 dropped (14,965 expired,
+332 sold, 0 dead links); 1,130 reposts collapsed in-run (29.3%); 14,697
+collapsed / 7,745 unique watches in index; 186 price outliers flagged and kept;
+13 outlier prices excluded from baselines; 283 of 304 unit baselines covering
+7,716 listings (100%); 42 of 58 brands baselined. Link check: 300/2,389 verified
+(capped). Sold tracer: 332 marked sold, all 332 by reply link, 0 by edit, median
+3d to sell (p25 1d, p75 5d, n=332).
+
+Signals: 2,543 confirmed sales (median 5d), 2,043 price cuts (median -2.22%),
+inventory looks 188.2% deeper than it is. References: 322 published (153 full
+confidence, 169 limited; 12 variant-grouped, 22 model-level, across 26 brands;
+162 too thin, 26 groups too broad, 22 model-card leftovers), deepest Rolex
+126334 n=462 fair $19,300-$21,700 (+-6%). Top weights: Rolex 0.198, Tudor 0.065,
+Cartier 0.050, Audemars Piguet 0.048, Omega 0.047.
+
+2 anomalies flagged this run: (a) 3 published listings with no resolved brand —
+parser/brands.py coverage gap, example is the Carousell blue-degrade DJ36 post
+still surfacing through the dealer channels; (b) 1 reference card with an asking
+spread over 60% of median, widest `rolex-124300` at 78.0% — one reference number
+likely covering several distinct watches. Route drift and page contract both
+clean. days_since_fresh=0.
+
+Space asset `/data/watch-index.json` re-uploaded and verified: HTTP 200,
+435,241 bytes, md5 `a48360793b9a84a516f57c55ca733b35`, sha256 prefix
+`7adb4469240946bc`, byte-identical to `data/index.json` on disk. Served composite
+reads back `1.1275` / `-0.26`, meta.updated 2026-10-07T18:15:26+08:00.
+
+Zero-new-message channels this run (6): `pngwatchdealer`, `goldmanluxurysg`,
+`watchplayboypteltd`, `sgwatchinsider`, `HengWatch`, `tagtimesingapore`.
+Per-channel counts in CHANNELS order (6+2+60+0+25+16+0+19+0+0+0+5+0+2) sum to
+135, exactly the scraper's reported total, which validates the list. `pngwatchdealer`
+last posted 2026-10-07 07:03 SGT, already captured by the 12:00 run — genuine
+quiet, not a stall. `goldmanluxurysg` (last post 2025-08-10) and `sgwatchinsider`
+(2026-01-01) remain dead by definition. `schonwatch` still absent from CHANNELS.
+
+Delivery: group send was NOT attempted — Zo's `send_telegram_message` has no
+group targeting parameter (`recipient` selects a connected account, not a chat),
+and the only connected account is `steamboat0x0`; group `-5370852148` has failed
+identically on every attempt since 2026-08-10. The single Telegram call went to
+the user's DM, where it succeeded. To restore true group delivery: add Zo's bot
+`@steamboat0x0` to group `-5370852148` as admin, or repoint the automation's
+delivery target.
+
+Note: git tree was clean this run — the long-standing uncommitted modifications to
+`web/routes/api-watch-listings.ts` / `api-watch-references.ts` are no longer present.
