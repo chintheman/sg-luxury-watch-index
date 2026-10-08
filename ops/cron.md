@@ -1897,3 +1897,73 @@ delivery target.
 
 Note: git tree was clean this run — the long-standing uncommitted modifications to
 `web/routes/api-watch-listings.ts` / `api-watch-references.ts` are no longer present.
+
+Update 2026-10-08 (12:00 SGT run): Pipeline healthy — exit 0, `pipeline.py` end
+to end, 170 new messages across 14 channels (33.5s scrape). Composite `1.1309`
+(`+0.0176` / `+1.58%` 1d; prev stored close 10-07 `1.1133`; 7d `+3.07%`, 30d
+`+10.42%`, 90d `+5.27%`), pre-owned `1.0075` / NEW `1.2457` / spread `+0.2382`,
+anchor 2026-04-02, 419 days tracked, 42/58 brands baselined, 305 distinct units
+(284 baselined covering 7,733 listings / 100%). Driver line: up 1.6%, led by
+Zenith, Panerai, IWC, with Cartier, Jaeger-LeCoultre, TAG Heuer pulling the
+other way. Availability `31/100` (previous run reported 56/100 — a 25-point
+single-run drop; worth watching, availability series is not flagged by the
+anomaly check).
+
+Restatement again — fourteenth consecutive run. The 10-07 close, reported as
+`1.1275` at 18:00 yesterday, is stored as `1.1133` now; the 10-06 close has
+moved again too (`1.1304` at 10-07 18:00 -> `1.1212`). So the reported `+1.58%`
+is a stored-vs-stored comparison; against what was actually reported at 18:00
+yesterday (`1.1275`) the move is `+0.30%`. Same defect as 09-30 onward; suspects
+unchanged (21-day rolling window plus late listprice edits rewriting the stored
+series).
+
+Export: 2,369 listings (2,076 priced) exported, 15,421 dropped (15,109 expired,
+312 sold, 0 dead links); 1,050 reposts collapsed in-run (28.1%); 14,794
+collapsed / 7,762 unique watches in index; 187 price outliers flagged and kept;
+13 outlier prices excluded from baselines; 16 brands carry no baseline. Link
+check: 300/2,369 verified (capped). Sold tracer: 312 marked sold, all 312 by
+reply link, 0 by edit, median 3d to sell (p25 1d, p75 5d, n=312).
+
+Signals: 2,564 confirmed sales (median 5d), 2,048 price cuts (median -2.23%),
+inventory looks 189.0% deeper than it is. References: 322 published (152 full
+confidence, 170 limited; 12 variant-grouped, 22 model-level, across 26 brands;
+161 too thin, 26 groups too broad, 23 model-card leftovers), deepest Rolex
+126334 n=462 fair $19,300-$21,700 (+-6%). Top weights: Rolex 0.198, Tudor
+0.065, Cartier 0.050, Audemars Piguet 0.048, Omega 0.047. Range 2025-01-03 ->
+2026-10-08.
+
+2 anomalies flagged this run: (a) 3 published listings with no resolved brand —
+parser/brands.py coverage gap, example is the Carousell blue-degrade DJ36 post
+still surfacing through the dealer channels; (b) 1 reference card with an asking
+spread over 60% of median, widest `rolex-124300` at 78.0% — one reference number
+likely covering several distinct watches. Route drift and page contract both
+clean. days_since_fresh=0.
+
+Space asset `/data/watch-index.json` re-uploaded and verified: HTTP 200, 436,320
+bytes, md5 `98536c1250eda579408c16f853fd966c`, byte-identical to `data/index.json`
+on disk (`cmp` clean). Served composite reads back `1.1309` / `+0.0176`,
+meta.updated 2026-10-08T12:16:00+08:00.
+
+Zero-new-message channels this run (7): `watchcapital`, `goldmanluxurysg`,
+`watchplayboypteltd`, `sgwatchinsider`, `kbluxury`, `tagtimesingapore`,
+`watchhunts`. Per-channel counts in CHANNELS order
+(8+5+58+21+64+0+0+9+0+0+5+0+0+0) sum to 170, exactly the scraper's reported
+total, which validates the list. Corroborated three ways: DB `raw_messages`
+inserts within the run window (04:10:00-04:11:00 UTC) sum to 170 and match the
+same seven zeros; and for each quiet channel `scraper_log.json`'s `last_scrape`
+either failed to advance (0 new AND 0 edits update neither field) or advanced on
+edits alone. Last post per quiet channel: `watchcapital` 10-07 07:43 UTC,
+`watchplayboypteltd` 10-06 06:07, `kbluxury` 10-07 08:45, `tagtimesingapore`
+10-06 07:23, `watchhunts` 10-07 08:47 — all already captured by an earlier run,
+so genuine quiet, not a stall. `goldmanluxurysg` (last post 2025-08-10) and
+`sgwatchinsider` (2026-01-01) remain dead by definition. `schonwatch` still
+absent from CHANNELS (removed 2026-08-03, Malaysian dealer).
+
+Delivery: group send WAS attempted this run and failed with the identical error
+— `send_telegram_message(recipient='-5370852148')` -> "No Telegram binding found
+for recipient '-5370852148'. Connected accounts: steamboat0x0." Same failure as
+every attempt since 2026-08-10. The report was then sent to the user's DM, where
+it succeeded. To restore true group delivery: add Zo's bot `@steamboat0x0` to
+group `-5370852148` as admin, or repoint the automation's delivery target.
+
+Note: git tree was clean at run start (no uncommitted `web/routes/*` drift).
