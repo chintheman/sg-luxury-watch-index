@@ -1967,3 +1967,77 @@ it succeeded. To restore true group delivery: add Zo's bot `@steamboat0x0` to
 group `-5370852148` as admin, or repoint the automation's delivery target.
 
 Note: git tree was clean at run start (no uncommitted `web/routes/*` drift).
+
+Update 2026-10-08 (18:00 SGT run): Pipeline healthy — exit 0, `pipeline.py` end
+to end, 104 new messages across 14 channels (run start 10:10:10 UTC, finished
+10:16 UTC). Composite `1.1328` (`+0.0191` / `+1.72%` 1d; prev stored close 10-07
+`1.1137`; 7d `+3.32%`, 30d `+10.58%`, 90d `+5.46%`), pre-owned `1.0099` / NEW
+`1.2455` / spread `+0.2356`, anchor 2026-04-02, 419 days tracked, 42/58 brands
+baselined, 305 distinct units (285 baselined covering 7,754 listings / 100%).
+Driver line: up 1.7%, led by Zenith, Panerai, IWC, with Cartier,
+Jaeger-LeCoultre, TAG Heuer pulling the other way.
+
+Restatement again — fifteenth consecutive run. The 10-07 close, reported as
+`1.1275` at 18:00 yesterday, was stored as `1.1133` at 12:00 today and is
+`1.1137` now; the 10-06 close has moved again too (`1.1212` at 12:00 today ->
+`1.1216`). So the reported `+1.72%` is a stored-vs-stored comparison; against
+what was actually reported at 12:00 today (`1.1309`) the move is `+0.17%`. Same
+defect as 09-30 onward; suspects unchanged (21-day rolling window plus late
+listprice edits rewriting the stored series).
+
+Export: 2,396 listings (2,078 priced) exported, 15,437 dropped (15,108 expired,
+329 sold, 0 dead links); 1,073 reposts collapsed in-run (28.3%), 882 watches
+listed more than once; 7,781 unique watches in index; 187 price outliers flagged
+and kept; 13 outlier prices excluded from baselines; 16 brands carry no baseline
+(`Fears`, `Baume & Mercier`, `Arnold & Son`, `Chanel`, `Jaquet Droz`,
+`Carl F. Bucherer`, `Louis Moinet`, `Louis Erard`, `Konstantin Chaykin`,
+`Graham`, `Baltic`, `Nomos`, `Oris`, `Bedat`, `Chronoswiss`, `Jacob & Co`).
+Link check: 300/2,396 verified (capped). Sold tracer: 329 marked sold, all 329
+by reply link, 0 by edit, median 3d to sell (p25 1d, p75 5d, n=329). Top
+weights: Rolex 0.198, Tudor 0.065, Cartier 0.050, Audemars Piguet 0.048,
+Omega 0.047. Range 2025-01-03 -> 2026-10-08.
+
+Signals: 2,587 confirmed sales (median 5d), 2,049 price cuts (median -2.22%),
+inventory looks 188.9% deeper than it is. References: 324 published (152 full
+confidence, 172 limited; 12 variant-grouped, 22 model-level, across 26 brands;
+162 too thin, 26 groups too broad, 23 model-card leftovers), deepest Rolex
+126334 n=463 fair $19,300-$21,700 (+-6%). Sheets: listings.csv (2,396),
+index_history.csv (419), brand_summary.csv (58), sold.csv (329),
+price_changes.csv (334), references.csv (324), reference_history.csv (1194) ->
+`/home/workspace/watch-index-data`.
+
+1 anomaly flagged this run: 3 published listings with no resolved brand —
+parser/brands.py coverage gap, example is the Carousell blue-degrade DJ36 post
+still surfacing through the dealer channels. The reference-spread flag that
+fired at 12:00 (`rolex-124300` at 78.0%) did NOT fire this run: zero cards
+exceed the 60% threshold, widest now `rolex-126515ln` at 59.3%, then
+`rolex-126000` 55.9% and `tag-heuer-formula-1` 53.3%. Route drift and page
+contract both clean. days_since_fresh=0. Availability `44/100` (31/100 at 12:00,
+56/100 at 18:00 yesterday — still flapping; availability series is not flagged
+by the anomaly check).
+
+Space asset `/data/watch-index.json` re-uploaded and verified: HTTP 200, 436,300
+bytes, md5 `314652c77ea7947972381bc2b67b6b19`, byte-identical to `data/index.json`
+on disk (`cmp` clean). Served composite reads back `1.1328` / `+0.0191`,
+meta.updated 2026-10-08T18:16:07+08:00.
+
+Zero-new-message channels this run (7): `watchcapital`, `goldmanluxurysg`,
+`watchplayboypteltd`, `sgwatchinsider`, `HengWatch`, `kbluxury`,
+`tagtimesingapore`. Per-channel counts in CHANNELS order
+(7+6+28+1+32+0+0+25+0+0+0+0+0+5) sum to 104, exactly the scraper's reported
+total, which validates the list. `goldmanluxurysg` (last post 2025-08-10) and
+`sgwatchinsider` (2026-01-01) remain dead by definition; the rest are genuine
+quiet rather than stalls. `schonwatch` still absent from CHANNELS (removed
+2026-08-03, Malaysian dealer).
+
+Delivery: group send was NOT attempted. `hermes send --list telegram` returns
+"no targets found for platform 'telegram'" — the Hermes bot has no Telegram
+targets at all now (previously it at least listed the DM and `Collab`), so group
+`-5370852148` is outside every bot's scope. `send_telegram_message` has no group
+targeting parameter (`recipient` selects a connected account, not a chat) and the
+only connected account is `steamboat0x0`. The single Telegram call went to the
+user's DM, where it succeeded on the first attempt. To restore true group
+delivery: add Zo's bot `@steamboat0x0` to group `-5370852148` as admin, or
+repoint the automation's delivery target.
+
+Note: git tree was clean at run start, and the run-log commit landed cleanly.
