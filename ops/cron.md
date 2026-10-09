@@ -2041,3 +2041,95 @@ delivery: add Zo's bot `@steamboat0x0` to group `-5370852148` as admin, or
 repoint the automation's delivery target.
 
 Note: git tree was clean at run start, and the run-log commit landed cleanly.
+
+Update 2026-10-09 (18:00 SGT run): Pipeline healthy — exit 0, `pipeline.py` end
+to end, 119 new messages across 14 channels (run start 10:09:29 UTC, index
+written 10:15:22 UTC). Composite `1.1145` (`-0.0085` / `-0.76%` 1d; prev stored
+close 10-08 `1.1230`; 7d `+4.58%`, 30d `+2.92%`, 90d `+3.97%`), pre-owned `1.0200`
+/ NEW `1.2468` / spread `+0.2268`, anchor 2026-04-02, 420 days tracked, 42/58
+brands baselined, 310 distinct units (290 baselined covering 7,815 listings /
+100%). Driver line: down 0.8%, led by TAG Heuer, Breitling, IWC, with Cartier,
+Panerai, Rolex pulling the other way. Availability `50/100` (44/100 at 18:00
+yesterday — still flapping; availability series is not flagged by the anomaly
+check).
+
+Restatement again — sixteenth consecutive run. The 10-08 close, reported as
+`1.1328` at 18:00 yesterday, is stored as `1.1230` now; the 10-07 close has moved
+again too (`1.1162` now, logged as `1.1137` at 18:00 yesterday). So the reported
+`-0.76%` is a stored-vs-stored comparison; against what was actually reported at
+18:00 yesterday (`1.1328`) the move is `-1.62%`. Same defect as 09-30 onward;
+suspects unchanged (21-day rolling window plus late listprice edits rewriting the
+stored series).
+
+Export: 2,418 listings (2,091 priced) exported, 15,592 dropped (15,259 expired,
+332 sold, 1 dead link — first non-zero dead-link count in several runs); 1,058
+reposts collapsed in-run (27.8%), 874 watches listed more than once; 14,947
+collapsed / 7,842 unique watches in index; 187 price outliers flagged and kept;
+13 outlier prices excluded from baselines; 16 brands carry no baseline
+(`Graham`, `Oris`, `Nomos`, `Konstantin Chaykin`, `Louis Erard`, `Jaquet Droz`,
+`Jacob & Co`, `Bedat`, `Fears`, `Chanel`, `Arnold & Son`, `Chronoswiss`,
+`Baltic`, `Carl F. Bucherer`, `Louis Moinet`, `Baume & Mercier`). Link check:
+300/2,419 verified (capped). Sold tracer: 332 marked sold, all 332 by reply link,
+0 by edit, median 3d to sell (p25 1d, p75 5d, n=332). Top weights: Rolex 0.198,
+Tudor 0.066, Cartier 0.050, Audemars Piguet 0.048, Omega 0.047. Range 2025-01-03
+-> 2026-10-09 (420 days).
+
+Signals: 2,625 confirmed sales (median 5d), 2,059 price cuts (median -2.24%),
+inventory looks 189.1% deeper than it is. References: 323 published (152 full
+confidence, 171 limited; 12 variant-grouped, 22 model-level, across 26 brands;
+164 too thin, 26 groups too broad, 23 model-card leftovers), deepest Rolex 126334
+n=462 fair $19,300-$21,700 (+-6%). Sheets: listings.csv (2,418),
+index_history.csv (420), brand_summary.csv (58), sold.csv (332),
+price_changes.csv (323), references.csv (323), reference_history.csv (1205) ->
+`/home/workspace/watch-index-data`.
+
+1 anomaly flagged this run: 4 published listing(s) have no resolved brand —
+parser/brands.py coverage gap. Note the count rose from 3 to 4 and the example
+has changed from the long-standing Carousell blue-degrade DJ36 post to
+`[New Old Stock] Oct 2024 Singer Reimagined Track 1 Bold Edition Strap SR006
+Blac`. The reference-spread flag did not fire (zero cards over the 60%
+threshold). Route drift and page contract both clean. days_since_fresh=0.
+
+Space asset `/data/watch-index.json` re-uploaded and verified: HTTP 200, 437,281
+bytes, md5 `4e108fa0100b430a29eeca7ec48bc237`, sha256 prefix `b0bca991292a92c1`,
+byte-identical to `data/index.json` on disk (`cmp` clean). Served composite reads
+back `1.1145`, meta.updated 2026-10-09T18:15:22+08:00.
+
+Zero-new-message channels this run (6): `ChuanwatchSG`, `watchcapital`,
+`goldmanluxurysg`, `sgwatchinsider`, `HengWatch`, `tagtimesingapore`. Per-channel
+counts in CHANNELS order (18+0+36+1+39+0+0+20+1+0+0+1+0+3) sum to 119, exactly
+the scraper's reported total. Corroborated against the DB: `raw_messages` inserts
+with `scraped_at >= '2026-10-09 10:00:00'` total 119 and fall in exactly the same
+8 channels (watchbooksg 39, watchexchangesg 36, thefinesttime 20,
+watchdistrictsg 18, watchhunts 3, kbluxury 1, pngwatchdealer 1,
+watchplayboypteltd 1), with zero inserts for all six quiet channels. Last post
+per quiet channel: `ChuanwatchSG` 2026-10-09 03:50 UTC (11:50 SGT, already
+captured by the 12:00 run), `HengWatch` 2026-10-09 01:08 UTC (09:08 SGT),
+`watchcapital` 10-07 07:43 UTC, `tagtimesingapore` 10-06 07:23 UTC — genuine
+quiet, not stalls. `goldmanluxurysg` (last post 2025-08-10) and `sgwatchinsider`
+(2026-01-01) remain dead by definition. `schonwatch` still absent from CHANNELS
+(removed 2026-08-03, Malaysian dealer).
+
+ANOMALY IN THE RUN SCHEDULE — the 2026-10-09 12:00 SGT run left no record. Its
+data artefacts are present (`data/listings.db` and `data/scraper_log.json` written
+04:09 UTC, `data/index.json` 04:15 UTC — i.e. 12:09-12:15 SGT, and the DB holds
+messages first seen at 04:09 UTC for `ChuanwatchSG` and `HengWatch`), and it
+evidently ran a full pipeline. But `ops/cron.md` has no entry for it and no commit
+landed (git log's newest commit before this run was still `4c190bc`, the 10-08
+18:00 log). So either the logging step failed silently or the run aborted after
+writing data and before reporting. Consequence: the composite reported at 12:00
+today is unrecoverable from this log, and the stored-vs-stored chain has a hole.
+Worth watching for a repeat — if it recurs, the logging step needs a hard failure
+that surfaces rather than a silent skip.
+
+Delivery: group send was NOT attempted. `hermes send --list telegram` returns
+"no targets found for platform 'telegram'" — the Hermes bot has no Telegram
+targets at all (unchanged from the 10-08 18:00 run), so the group is outside
+every bot's scope; `send_telegram_message` has no group targeting parameter
+(`recipient` selects a connected account, not a chat) and the only connected
+account is `steamboat0x0`. The single Telegram call went to the user's DM, where
+it succeeded on the first attempt. To restore true group delivery: add Zo's bot
+`@steamboat0x0` to group `-5370852148` as admin, or repoint the automation's
+delivery target.
+
+Note: git tree was clean at run start, and the run-log commit landed cleanly.
