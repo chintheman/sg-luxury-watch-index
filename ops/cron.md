@@ -2724,104 +2724,6 @@ internally. No direct calls to `scraper.py`, `export_pipeline.py` or
 
 Scrape: 161 new messages across 14 channels. Per-channel new-message counts in
 CHANNELS order (14+10+50+9+63+0+0+15+0+0+0+0+0+0) sum to 161, exactly the
-scraper's reported total, which validates the quiet list. This run's stdout was
-captured to a file and read back in full (not piped through `tail`), so every
-per-channel block was visible. Eight channels reported zero new messages:
-`watchcapital`, `goldmanluxurysg`, `watchplayboypteltd`, `sgwatchinsider`,
-`HengWatch`, `kbluxury`, `tagtimesingapore`, `watchhunts` — up from five at the
-10-12 18:00 run. `goldmanluxurysg` (last post 2025-08-10) and `sgwatchinsider`
-(2026-01-01) remain dead by definition; `watchplayboypteltd`, `kbluxury` and
-`watchhunts` join the quiet list this run, while `watchcapital` is quiet for a
-third consecutive run. `watchbooksg` skipped 1 message with no timestamp
-(unusable — every consumer date-filters). `schonwatch` still absent from CHANNELS
-(removed 2026-08-03, Malaysian dealer).
-
-Export: 2,394 listings exported (2,068 priced). Dropped 16,365: 16,053 expired,
-312 sold, 0 dead links. Dedupe collapsed 929 reposts (25.6%); 801 watches were
-listed more than once. Link check verified 300 of 2,394 links (skips listings
-under 2 days old, capped at 300/run) with zero dead. Sold tracer marked 312
-listings sold (312 by reply link, 0 by edit), median 3 days to sell (p25 1, p75 5,
-n=312). Matching units: 313 distinct (4,178 by reference, 2,974 by model, 880
-brand-level fallback); 293 of 313 units baselined, covering 8,005 listings (100%).
-Date range 2025-01-03 → 2026-10-13 (424 days), 58 brands, 42 of 58 baselined;
-missing-baseline set unchanged in character (16 thin-listing brands). Top weights
-Rolex 0.198, Tudor 0.067, Cartier 0.050, Audemars Piguet 0.048, Omega 0.047.
-
-Index: composite `1.1120`, `-0.0160` / `-1.42%` 1d stored-vs-stored (10-12 close
-1.1280 → 10-13 1.1120). Pre-Owned `1.0268`, NEW `1.3468`, NEW−PO spread `+0.3200`.
-Anchor 2026-04-02, 424 days tracked, 42/58 brands baselined, days_since_fresh=0.
-Move led by Omega, Cartier and Breitling; Rolex, TAG Heuer and
-Jaeger-LeCoultre pulling the other way.
-
-23rd consecutive restatement: the 10-12 close was stored as 1.1202 at the 10-12
-18:00 run and now reads 1.1280 (+0.0078); the 10-11 close firmed from 1.1191 to
-1.1275 (+0.0084); the 10-10 close from 1.1118 to 1.1179 (+0.0061). Same mechanism
-as the previous twenty-two runs — each rebuild repools the rolling window with
-fresher listings, so the most recent days' stored values move between runs.
-Stored-vs-stored is the only honest day-over-day read.
-
-Signals: 2,790 confirmed sales (median 5d), 2,076 price cuts (median −2.25%),
-inventory looks 192.8% deeper than it is. References: 331 published (160 full
-confidence, 171 limited; 15 variant-grouped, 21 model-level) across 26 brands;
-168 too thin, 24 groups too broad, 26 model-card leftovers; deepest Rolex 126334
-n=480 fair $19,300–$21,700 (±6%). Sheets: listings.csv (2,394),
-index_history.csv (424), brand_summary.csv (58), sold.csv (312),
-price_changes.csv (200), references.csv (331), reference_history.csv (1,269)
--> `/home/workspace/watch-index-data`.
-
-TWO anomalies flagged this run, quoted verbatim from pipeline stdout:
-
-    - 5 published listing(s) have no resolved brand (a classified watch should always resolve one — check parser/brands.py coverage). Example: 'NEW ARRIVAL- 116710BLNR\n🦇\n🦇\n🦇\nPrice: S$17,950\nhttps://carousell.app.link/ajoEFZY'
-    - 2 reference card(s) have an asking spread over 60% of median, widest rolex-124300 at 80.7% — that usually means one reference number covers several distinct watches.
-
-The unbranded flag holds at 5 with the same Carousell example reported by every
-run since 10-09, so the parser gap is stable, not worsening. The reference-spread
-flag widened from one card to two: `rolex-124300` at 80.7% is new and now the
-worst, with `patek-philippe-7118` at 64.5% persisting for a fourth consecutive
-run. A 12,300 median with an 80.7% spread is consistent with several dial variants
-sold under one reference number, which is worth checking before that card is
-trusted as a single fair price. Route drift and page contract both clean (deployed
-`/api/watch-listings` matches the repo; www.0xsteamboat.me/watches has every
-field it needs).
-
-Space asset `/data/watch-index.json` re-uploaded and verified: HTTP 200,
-441,328 bytes, md5 `75f8f77179c1e6c6c3de83ab846c87c0`, byte-identical to
-`data/index.json` on disk (`cmp` clean). Served composite reads back `1.112` /
-`-1.42`, meta.updated `2026-10-13T12:15:23+08:00`.
-
-Delivery: group send NOT attempted. `hermes send --list` → "No messaging
-platforms configured or no channels discovered yet"; `hermes send --list telegram`
-→ "no targets found for platform 'telegram'. Configured: (none)". The host has no
-`~/.hermes/.env` and no `~/.hermes/config.yaml` at all, so Hermes holds no
-Telegram credentials here, and no Telegram bot token exists in
-`/home/workspace/.secrets` (only `HERMES_BLITZ_KEY`, `LABS_PASSWORD`,
-`wcc-demo.env`, `studio-crm/`). Group `-5370852148` is therefore unreachable by
-every available path: `send_telegram_message` has no chat targeting parameter
-(`recipient` selects a connected account, not a chat) and the only connected
-account is `steamboat0x0`. The single Telegram call went to the user's DM and
-succeeded on the first attempt. To restore true group delivery: add Zo's bot
-`@steamboat0x0` to group `-5370852148` as admin, or run `hermes gateway setup`
-with a Telegram bot token on this host.
-
-Housekeeping: `ops/cron.md` held the 2026-10-12 18:00 SGT entry twice — commits
-`9c5fe4f` (84 lines) and `7f6c4a0` (87 lines) logged the same run under the same
-heading, with identical composite values (1.1202, +0.10%) and identical anomaly
-text, differing only in wording and detail. The thinner `9c5fe4f` version was
-removed, leaving the fuller `7f6c4a0` version as the single record. No run was
-lost: there was one 18:00 run on 10-12, not two.
-
-Note: git tree was clean at run start (HEAD `7f6c4a0`, the 10-12 18:00 log), and
-the run-log commit landed cleanly and pushed to `origin/main`.
-
-## 2026-10-13 12:00 SGT run
-
-Pipeline exit 0 in a single invocation — `pipeline.py` only, scraper → export →
-index → signals → references → sheets → anomaly check all orchestrated
-internally. No direct calls to `scraper.py`, `export_pipeline.py` or
-`index_engine.py`.
-
-Scrape: 161 new messages across 14 channels. Per-channel new-message counts in
-CHANNELS order (14+10+50+9+63+0+0+15+0+0+0+0+0+0) sum to 161, exactly the
 scraper's reported total, which validates the quiet list. Run start
 2026-10-13T04:09:54Z (12:09 SGT), asset uploaded 12:15:23 SGT.
 
@@ -2896,6 +2798,18 @@ commits, `9c5fe4f` authored by Zo and `7f6c4a0` a fuller rewrite of the same
 run, 84 and 87 insertions). Both blocks described identical composite values
 (`1.1202`, +0.10%) and 160 messages, so it was one run logged twice, not two
 runs. Removed the earlier, thinner of the two blocks and kept the fuller one.
+
+The same defect recurred on this run: two entries were written for the single
+2026-10-13 12:00 run, one landing in `11f85cf` and a second in `f8c43fa`, under
+an identical heading. They report identical numbers throughout — 161 messages,
+2,394 listings, drop 16,053 expired / 312 sold / 0 dead, composite `1.1120`
+(`-1.42%`), asset md5 `75f8f771` — and `data/` mtimes show only one pipeline
+execution (`listings.db` 04:10:25Z, `index.json` 04:15:23Z, `references.json`
+04:16:02Z), so this was one run logged twice, not two runs. The `11f85cf`
+duplicate was removed, leaving the `f8c43fa` entry as the single record. Whatever
+is firing twice is on the logging side, not the pipeline side: only one scrape,
+one export and one index build happened, and the earlier 10-12 18:00 and 10-10
+12:00 duplicates show the same signature.
 
 Note: git tree was clean at run start (HEAD `7f6c4a0`, the 10-12 18:00 log), and
 the run-log commit landed cleanly and pushed to `origin/main`.
