@@ -34,6 +34,20 @@ Report to the Telegram group "(Project) Luxury Watch Index":
 - Any channel reporting zero new messages
 ```
 
+
+## Runner note — capture stdout to a file (2026-10-14)
+
+A full pipeline run takes ~6.5 minutes. On the 2026-10-14 18:00 run the bash
+tool call returned `incomplete` partway through while the process kept running
+to completion, so the harness stopped collecting stdout and the run's own
+numbers had to be re-derived from the DB afterwards. Redirect future runs:
+
+```
+python3 pipeline.py > /tmp/sg-lwix-run.log 2>&1
+```
+
+so the output survives regardless of what the tool layer does with the call.
+
 ## Why this replaced the previous instruction
 
 The automation used to invoke the three scripts by hand:
