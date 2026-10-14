@@ -2901,3 +2901,90 @@ automation's delivery target.
 Note: git tree was clean at run start (HEAD `e5fee79`, the duplicate-collapse
 commit), and the run-log commit landed cleanly and pushed to `origin/main`. One
 entry only this run — no double-logging observed on the 10-13 18:00 slot.
+
+## 2026-10-14 12:00 SGT run
+
+Pipeline exit 0 in a single invocation — `pipeline.py` only, scraper → export →
+index → signals → references → sheets → anomaly check all orchestrated
+internally. No direct calls to `scraper.py`, `export_pipeline.py` or
+`index_engine.py`.
+
+Scrape: 221 new messages across 14 channels. Run start 2026-10-14T04:09:52Z
+(12:09 SGT), asset uploaded 12:15 SGT. Two channels each skipped one message
+with no timestamp (`watchdistrictsg`, `watchbooksg`) — unusable, since every
+consumer date-filters — which does not affect the count.
+
+Seven channels reported zero new messages (up from three at the 10-13 18:00 run):
+`watchcapital`, `goldmanluxurysg`, `watchplayboypteltd`, `sgwatchinsider`,
+`kbluxury`, `tagtimesingapore`, `watchhunts`. `goldmanluxurysg` (last post
+2025-08-10) and `sgwatchinsider` (2026-01-01) remain dead by definition; the
+other five are live but quiet this slot. `schonwatch` still absent from CHANNELS
+(removed 2026-08-03, Malaysian dealer).
+
+Export: `2,408` listings exported (`2,076` priced). Dropped `16,509` — `16,196`
+expired, `313` sold, `0` dead links. Link check verified 300 of 2,408 links
+(skipping <2d old, capped at 300/run), zero dead. Dedupe collapsed 976 reposts
+(26.4%) across 818 repeatedly-listed watches; a second dedupe pass collapsed
+15,807 reposts (66.2%), leaving 8,088 unique watches. Matching units: 313
+distinct (4,218 by reference, 2,984 by model, 886 brand-level fallback); unit
+baselines for 293 of 313 units covering 8,061 listings (100%); 13 outlier prices
+excluded from baselines; 42 of 58 brands baselined; 188 price outliers flagged
+outside the 0.2x–5.0x brand baseline (kept in index). Top weights: Rolex 0.199,
+Tudor 0.066, Cartier 0.050, Audemars Piguet 0.049, Omega 0.047. Missing-baseline
+set unchanged in character (16 thin-listing brands). Sold tracer: 313 marked
+sold, all 313 by reply link, 0 by edit, median 3d to sell (p25 1d, p75 5d,
+n=313).
+
+Index: composite `1.1122`, `-0.0046` / `-0.41%` 1d stored-vs-stored (10-13 close
+now stored as 1.1168, 10-14 vs 10-13). Pre-Owned `1.0322`, NEW `1.3884`, NEW−PO
+spread `+0.3562`. Anchor 2026-04-02, 425 days tracked, 42/58 brands baselined,
+days_since_fresh=0. Move led by Vacheron Constantin, IWC, Audemars Piguet; Rolex,
+TAG Heuer and Longines pulling the other way.
+
+25th consecutive restatement: the 10-13 close was stored as 1.1122 at the 10-13
+18:00 run and now reads 1.1168 (+0.0046); the 10-12 close firmed from 1.1292 to
+1.1325 (+0.0033), and 10-11 from 1.1258 to 1.1342 (+0.0084). Same mechanism as
+the previous twenty-four runs — each rebuild repools the rolling window with
+fresher listings, so the most recent days' stored values move between runs.
+Stored-vs-stored is the only honest day-over-day read.
+
+Signals: 2,836 confirmed sales (median 5d to sell), 2,114 price cuts (median
+−2.23%), inventory looks 193.9% deeper than it is. References: 332 published
+(162 full confidence, 170 limited; 15 variant-grouped, 21 model-level) across
+26 brands; 168 too thin, 22 groups too broad, 28 model-card leftovers; deepest
+Rolex 126334 n=490 fair $19,150–$21,600 (±6%). Sheets: listings.csv (2,408),
+index_history.csv (425), brand_summary.csv (58), sold.csv (313),
+price_changes.csv (226), references.csv (332), reference_history.csv (1,279)
+→ `/home/workspace/watch-index-data`.
+
+TWO anomalies flagged this run:
+
+    - 5 published listing(s) have no resolved brand (a classified watch should always resolve one — check parser/brands.py coverage). Example: 'NEW ARRIVAL- 116710BLNR\n🦇\n🦇\n🦇\nPrice: S$17,950\nhttps://carousell.app.link/ajoEFZY'
+    - 2 reference card(s) have an asking spread over 60% of median, widest rolex-124300 at 89.2% — that usually means one reference number covers several distinct watches.
+
+The unbranded flag holds at 5 with the same Carousell example as 10-09 onwards
+(ninth consecutive run), so the parser gap is stable, not worsening. The
+wide-spread flag worsened: `rolex-124300` moved from 80.7% (two runs) to 89.2%,
+a new worst, still alongside `patek-philippe-7118` at 64.5% (verified directly
+from `data/references.json` — the only two cards whose `spread_pct` exceeds 60);
+both are cases of one reference number covering several distinct watches. Route
+drift and page contract both clean (deployed `/api/watch-listings` matches the
+repo; www.0xsteamboat.me/watches has every field it needs).
+
+Space asset `/data/watch-index.json` re-uploaded and verified: HTTP 200,
+442,277 bytes, md5 `8c3d1c11221251967b618153f3e65884`, byte-identical to
+`data/index.json` on disk (`md5sum` clean on both). Served composite reads back
+`1.1122` / `-0.41`, meta.updated `2026-10-14T12:15:48+08:00`.
+
+Delivery: group send NOT attempted. `hermes send --list telegram` → "hermes
+send: no targets found for platform 'telegram'. Configured: (none)"; bare
+`hermes send --list` → "No messaging platforms configured or no channels
+discovered yet". `send_telegram_message` has no group targeting parameter
+(`recipient` selects a connected account, not a chat) and the only connected
+account is `steamboat0x0`, so the report went to the user's DM and succeeded on
+the first attempt. To restore true group delivery: add Zo's bot `@steamboat0x0`
+to group `-5370852148` as admin, or repoint the automation's delivery target.
+
+Note: git tree was clean at run start (HEAD `fc5af66`, the 10-13 18:00 log
+commit), and the run-log commit landed cleanly and pushed to `origin/main`. One
+entry only this run — no double-logging observed on the 10-14 12:00 slot.
