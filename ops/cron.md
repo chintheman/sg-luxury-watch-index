@@ -20,7 +20,7 @@ is lost or altered, restore it from here.
 ```
 Run the SG Luxury Watch Index pipeline:
 
-1. cd /home/workspace/projects/sg-luxury-watch-index && python3 pipeline.py > /tmp/sg-lwix-run.log 2>&1; echo "EXIT=$?"; cat /tmp/sg-lwix-run.log
+1. cd /home/workspace/projects/sg-luxury-watch-index && python3 pipeline.py > /tmp/sg-lwix-run.log 2>&1; echo "PIPELINE_EXIT=$?"; cat /tmp/sg-lwix-run.log
 
 2. Upload the refreshed index as a space asset:
    update_space_asset with
@@ -33,11 +33,11 @@ Report to the Telegram group "(Project) Luxury Watch Index":
 - Any line under "Anomalies flagged for review" — quote these verbatim
 - Any channel reporting zero new messages
 
-Delivery: the group has been unreachable from both bots since 2026-08-10.
-Check `hermes send --list telegram` first; if the group is not listed there,
-skip the group attempt and send the report to the user's DM instead — a failed
-group call burns the per-turn send_telegram_message limit and can cost the
-deliverable entirely. See the Telegram section below for the history.
+Delivery: read `hermes send --list telegram` first. The group has been
+unreachable from both bots since 2026-08-10 (see the Telegram section below),
+and an attempted-and-failed group send burns the per-turn limit on the DM
+fallback — so if the group is not listed, skip it and send the report to the
+user's DM.
 ```
 
 
@@ -3056,7 +3056,8 @@ outliers flagged outside the 0.2x–5.0x brand baseline (kept in index).
 
 27th consecutive restatement: the 10-13 close was stored as 1.1147 at the 10-14
 18:00 run and now reads 1.0996 (−0.0151); the 10-12 close moved 1.1297 → 1.1134
-(−0.0163), 10-11 1.1325 → 1.1189 (−0.0136). Same mechanism as the previous
+(−0.0163), 10-11 1.1325 → 1.1189 (−0.0136), 10-10 1.1277 → 1.1182 (−0.0095).
+Same mechanism as the previous
 twenty-six runs — each rebuild repools the rolling window with fresher listings.
 Stored-vs-stored is the only honest day-over-day read.
 
@@ -3074,8 +3075,8 @@ TWO anomalies flagged this run:
     - 4 published listing(s) have no resolved brand (a classified watch should always resolve one — check parser/brands.py coverage). Example: 'NEW ARRIVAL- 116710BLNR\n🦇\n🦇\n🦇\nPrice: S$17,950\nhttps://carousell.app.link/ajoEFZY'
     - 2 reference card(s) have an asking spread over 60% of median, widest rolex-124300 at 86.6% — that usually means one reference number covers several distinct watches.
 
-The unbranded flag eased from 5 to 4 (same Carousell example, 11th consecutive
-run since 10-09), so the parser gap is stable rather than worsening. The
+The unbranded flag eased from 5 to 4, holding the same Carousell example as every
+run since 10-09, so the parser gap is stable rather than worsening. The
 wide-spread flag is unchanged run-on-run: `rolex-124300` holds at 86.6% (same as
 10-14 18:00, down from the 89.2% peak) alongside `patek-philippe-7118` at 64.5%
 (verified directly from `data/references.json` — the only two cards whose
@@ -3104,102 +3105,9 @@ Runner-note fix applied this run: the automation's step 1 now redirects to
 `/tmp/sg-lwix-run.log` and cats it, instead of piping to a tail, so stdout
 survives for the whole run regardless of how the tool layer reports the call.
 
-## 2026-10-15 12:00 SGT run
-
-Pipeline exit 0 in a single invocation — `pipeline.py` only, scraper → export →
-index → signals → references → sheets → anomaly check all orchestrated
-internally. No direct calls to `scraper.py`, `export_pipeline.py` or
-`index_engine.py`.
-
-This run's own stdout was lost before capture (the agent's command piped it
-through `tail -60`), so the scrape and export sections were re-derived read-only
-from the DB and `data/` afterwards — same situation as the 2026-10-14 18:00 run,
-one day on. The automation instruction was then amended so step 1 redirects to
-`/tmp/sg-lwix-run.log` and cats it (see the runner note above).
-
-Scrape: 179 new messages across 14 channels. Run start 2026-10-15T12:09:48 SGT,
-asset uploaded ~12:16 SGT. The per-channel new-message counts were re-derived
-from `raw_messages.first_seen_at >= 2026-10-15T12:09:48+08:00` (the scraper
-stamps `first_seen_at` on insert only, so this is exact for new messages), and
-they sum to the run's own logged `total_saved=179`. The scraper's own
-"skipped message(s) with no timestamp" line was inside the lost section and was
-not recovered.
-
-Seven channels reported zero new messages (unchanged from seven at the 10-14
-12:00 run): `goldmanluxurysg`, `watchplayboypteltd`, `sgwatchinsider`,
-`kbluxury`, `tagtimesingapore`, `watchhunts`, `HengWatch`. `goldmanluxurysg`
-(last post 2025-08-10) and `sgwatchinsider` (2026-01-01) remain dead by
-definition; the other five are live but quiet this slot. `schonwatch` still
-absent from CHANNELS (removed 2026-08-03, Malaysian dealer).
-
-Export: `2,445` listings exported (`2,078` priced). Dropped `16,654` — `16,340`
-expired, `314` sold, `0` dead links. The link check verified its 300 eligible
-links (oldest first, skipping <2d old, capped at 300/run) with zero dead; both
-figures come from the read-only re-derivation, which reproduced the run's own
-listing count exactly as printed in its sheets step. Dedupe collapsed 949
-reposts (25.6%) across 800 repeatedly-listed watches. Sold tracer: 314 marked
-sold, all 314 by reply link, 0 by edit, median 3d to sell (p25 1d, p75 5d,
-n=314).
-
-Index: composite `1.1116`, `+0.0205` / `+1.88%` 1d (10-15 against the 10-14
-close as stored by this run, `1.0911`). Pre-Owned `1.0461`, NEW `1.3372`,
-NEW−PO spread `+0.2911`. Anchor 2026-04-02, 426 days tracked, 42/58 brands
-baselined, days_since_fresh=0; 13 outlier prices excluded from baselines and 188
-flagged outside the 0.2x–5.0x brand baseline (kept in index). Top weights: Rolex
-0.199, Tudor 0.066, Cartier 0.050, Audemars Piguet 0.049, Omega 0.047. Move led
-by Zenith, Cartier, TAG Heuer; Jaeger-LeCoultre, Tudor and Rolex pulling the
-other way.
-
-27th consecutive restatement. Against the served asset from the 10-14 18:00 run
-(md5 `6323ed96`): the 10-13 close moved 1.1147 → 1.0996 (−0.0151), 10-12 1.1297
-→ 1.1134 (−0.0163), 10-11 1.1325 → 1.1189 (−0.0136), 10-10 1.1277 → 1.1182
-(−0.0095), and the 10-14 close that run stored as 1.1116 now reads 1.0911
-(−0.0205). Same mechanism as the previous twenty-six runs — each rebuild
-repools the rolling window with fresher listings, so the most recent days'
-stored values move between runs. Stored-vs-stored is the only honest
-day-over-day read; this run's +1.88% is a restated look at a close that was
-printed as flat at 18:00 yesterday.
-
-Signals: 2,865 confirmed sales (median 5d to sell), 2,117 price cuts (median
-−2.22%), inventory looks 194.2% deeper than it is. References: 335 published
-(163 full confidence, 172 limited; 15 variant-grouped, 22 model-level) across 26
-brands; 166 too thin, 23 groups too broad, 26 model-card leftovers; deepest
-Rolex 126334 n=491 fair $19,150–$21,600 (±6%). Sheets: listings.csv (2,445),
-index_history.csv (426), brand_summary.csv (58), sold.csv (314),
-price_changes.csv (204), references.csv (335), reference_history.csv (1,292)
-→ `/home/workspace/watch-index-data`.
-
-TWO anomalies flagged this run:
-
-    - 4 published listing(s) have no resolved brand (a classified watch should always resolve one — check parser/brands.py coverage). Example: 'NEW ARRIVAL- 116710BLNR\n🦇\n🦇\n🦇\nPrice: S$17,950\nhttps://carousell.app.link/ajoEFZY'
-    - 2 reference card(s) have an asking spread over 60% of median, widest rolex-124300 at 86.6% — that usually means one reference number covers several distinct watches.
-
-The unbranded flag improved from 5 to 4, holding the same Carousell example as
-10-09 onwards (tenth consecutive run), so the parser gap is stable, not
-worsening. The wide-spread flag is unchanged from 10-14 18:00: `rolex-124300` at
-86.6% alongside `patek-philippe-7118` at 64.5% (verified directly from
-`data/references.json` — the only two cards whose `spread_pct` exceeds 60); both
-are cases of one reference number covering several distinct watches. Route drift
-and page contract both clean (deployed `/api/watch-listings` matches the repo;
-www.0xsteamboat.me/watches has every field it needs).
-
-Space asset `/data/watch-index.json` re-uploaded and verified: HTTP 200,
-443,347 bytes, md5 `1eee5b5f49375d26a71d8dfd1f5e0bc1`, byte-identical to
-`data/index.json` on disk (`cmp` clean). Served composite reads back `1.1116` /
-`+1.88`, meta.updated `2026-10-15T12:15:13+08:00`.
-
-Delivery: group send NOT attempted. `hermes send --list telegram` → "hermes
-send: no targets found for platform 'telegram'. Configured: (none)" — unchanged,
-so per the recommendation above the single available Telegram call went to the
-DM and succeeded on the first attempt. To restore true group delivery: add Zo's
-bot `@steamboat0x0` to group `-5370852148` as admin, or repoint the automation's
-delivery target.
-
-Automation amended this run: instruction step 1 now redirects to
-`/tmp/sg-lwix-run.log` and cats it, plus the DM-fallback delivery note; model
-left at `byok:5b37c518` (DeepSeek Flash). The instruction block at the top of
-this file was updated to match.
-
 Note: git tree was clean at run start (HEAD `3a671a0`, the 10-14 18:00 runner
 note), and the run-log commit landed cleanly and pushed to `origin/main`. One
-entry only this run — no double-logging observed on the 10-15 12:00 slot.
+entry only this run after collapsing a duplicate: the 10-15 12:00 entry was
+written twice (two identical `## 2026-10-15 12:00 SGT run` headings, at lines 3018
+and 3107 of the pre-collapse file, same numbers in both); the second copy was
+removed — matching the 2026-10-13 12:00 duplicate-collapse precedent (`e5fee79`).
