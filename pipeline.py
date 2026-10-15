@@ -195,23 +195,32 @@ def check_anomalies():
 def main():
     print(f"🚀 SG-LWIX Pipeline — {__import__('datetime').datetime.now().isoformat()}")
 
-    # Step 1: Scrape new Telegram messages
-    run_step("Scrape", "python3 scraper/scraper.py")
+    steps = [
+        # Step 1: Scrape new Telegram messages
+        ("Scrape", "python3 scraper/scraper.py"),
+        # Step 2: Export filtered listings JSON
+        ("Export listings", "python3 index/export_pipeline.py --link-check"),
+        # Step 3: Derived market signals (time to sell, price movement, inventory)
+        ("Signals", "python3 index/signals.py"),
+        # Step 4: Per-reference price aggregates (the "what's it worth" layer)
+        ("References", "python3 index/references.py"),
+        # Step 5: Export everything we track to CSVs for exploration
+        ("Export sheets", "python3 index/export_sheets.py"),
+    ]
 
-    # Step 2: Export filtered listings JSON
-    run_step("Export listings", "python3 index/export_pipeline.py --link-check")
-
-    # Step 3: Derived market signals (time to sell, price movement, inventory)
-    run_step("Signals", "python3 index/signals.py")
-
-    # Step 4: Per-reference price aggregates (the "what's it worth" layer)
-    run_step("References", "python3 index/references.py")
-
-    # Step 5: Export everything we track to CSVs for exploration
-    run_step("Export sheets", "python3 index/export_sheets.py")
+    failed = []
+    for name, cmd in steps:
+        code = run_step(name, cmd)
+        if code != 0:
+            failed.append((name, code))
 
     # Step 6: Surface data-quality anomalies for review
     check_anomalies()
+
+    if failed:
+        detail = ", ".join(f"{name} (exit {code})" for name, code in failed)
+        print(f"\n❌ Pipeline finished with {len(failed)} failed step(s): {detail}")
+        sys.exit(1)
 
     print("\n✅ Pipeline complete.")
 

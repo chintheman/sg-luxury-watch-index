@@ -3111,3 +3111,106 @@ entry only this run after collapsing a duplicate: the 10-15 12:00 entry was
 written twice (two identical `## 2026-10-15 12:00 SGT run` headings, at lines 3018
 and 3107 of the pre-collapse file, same numbers in both); the second copy was
 removed — matching the 2026-10-13 12:00 duplicate-collapse precedent (`e5fee79`).
+
+## 2026-10-15 18:00 SGT run
+
+Pipeline run in a single invocation — `pipeline.py` only, orchestrating
+scraper → export → index → signals → references → sheets → anomaly check
+internally. No direct calls to `scraper.py`, `export_pipeline.py` or
+`index_engine.py`. Run start `2026-10-15T10:09:52Z` (18:09:52 SGT), index written
+`18:15:28 SGT` (~5m36s wall). Launched with `nohup ... &` and polled, so the log
+survived without any `tail` truncation; full stdout at `/tmp/sg-lwix-run.log`
+(145 lines).
+
+Scrape: 181 new messages across 14 channels. Five channels reported zero new
+messages: `ChuanwatchSG`, `goldmanluxurysg`, `sgwatchinsider`, `HengWatch`,
+`watchhunts`. `goldmanluxurysg` (last post 2025-08-10) and `sgwatchinsider`
+(2026-01-01) remain dead by definition; the other three are live but quiet this
+slot. `watchdistrictsg` additionally skipped 1 message with no timestamp (unusable
+for every date-filtering consumer). Bulk of the volume: `watchexchangesg` 102,
+`watchbooksg` 31, `thefinesttime` 25.
+
+Export: `2,481` listings exported (`2,089` priced). Dropped `16,667` — `16,334`
+expired, `333` sold, `0` dead links. Link check verified 300 of 2,481 (oldest
+first, <2d skipped, 300/run cap), zero dead. Dedupe collapsed 1,038 reposts (26.9%)
+across 871 repeatedly-listed watches. Sold tracer: 333 marked sold, all 333 by
+reply link, 0 by edit, median 3d to sell (p25 1d, p75 5d, n=333). The index-stage
+repool then collapsed 16,010 reposts (66.2%) leaving 8,158 unique watches.
+
+Index: composite `1.1089`, `+0.0164` / `+1.50%` 1d stored-vs-stored (10-14 close
+now stored as 1.0925). Pre-Owned `1.0467`, NEW `1.3348`, NEW−PO spread `+0.2881`.
+Anchor 2026-04-02, 426 days tracked, 42/58 brands baselined, days_since_fresh=0.
+Move led by Zenith, Cartier, TAG Heuer; Audemars Piguet, Jaeger-LeCoultre,
+Breitling pulling the other way. Top weights: Rolex 0.199, Tudor 0.066, Cartier
+0.050, Audemars Piguet 0.049, Omega 0.047; 15 outlier prices excluded from
+baselines, 189 price outliers flagged outside the 0.2x–5.0x brand baseline (kept
+in index). Matching units 314 distinct (4,270 by reference, 2,996 by model, 892
+brand-level fallback); unit baselines cover 294 of 314 units / 8,131 listings
+(100% of priced records). 16 brands still short of a baseline: Konstantin
+Chaykin, Louis Moinet, Jaquet Droz, Jacob & Co, Chanel, Baume & Mercier, Nomos,
+Fears, Chronoswiss, Carl F. Bucherer, Graham, Bedat, Baltic, Oris, Arnold & Son,
+Louis Erard.
+
+28th consecutive restatement: the 10-14 close was stored as 1.0911 at the 10-15
+12:00 run and now reads 1.0925 (+0.0014); the 10-13 close moved 1.0996 → 1.1066
+(+0.0070), 10-12 1.1134 → 1.1178 (+0.0044), 10-11 1.1189 → 1.1199 (+0.0010),
+10-10 1.1182 → 1.1252 (+0.0070). Same mechanism as the previous twenty-seven runs —
+each rebuild repools the rolling window with fresher listings. Stored-vs-stored is
+the only honest day-over-day read.
+
+Signals: 2,887 confirmed sales (median 5d to sell), 2,118 price cuts (median
+−2.25%), inventory looks 194.7% deeper than it is. Availability Score 72/100.
+References: 336 published (163 full confidence, 173 limited; 15 variant-grouped,
+22 model-level) across 26 brands; 164 too thin, 23 groups too broad, 26
+model-card leftovers; deepest Rolex 126334 n=494 fair $19,200–$21,600 (±6%).
+Sheets: listings.csv (2,481), index_history.csv (426), brand_summary.csv (58),
+sold.csv (333), price_changes.csv (211), references.csv (336),
+reference_history.csv (1,301) → `/home/workspace/watch-index-data`.
+
+TWO anomalies flagged this run:
+
+    - 4 published listing(s) have no resolved brand (a classified watch should always resolve one — check parser/brands.py coverage). Example: 'NEW ARRIVAL- 116710BLNR\n🦇\n🦇\n🦇\nPrice: S$17,950\nhttps://carousell.app.link/ajoEFZY'
+    - 2 reference card(s) have an asking spread over 60% of median, widest rolex-124300 at 93.1% — that usually means one reference number covers several distinct watches.
+
+The unbranded flag holds at 4 with the same Carousell example as every run since
+10-09, so the parser gap is stable rather than worsening. The wide-spread flag is
+unchanged in count but worse in degree: `rolex-124300` climbed 86.6% → 93.1%
+(off the 89.2% peak earlier in the month) alongside `patek-philippe-7118` at 64.5%
+(verified directly from `data/references.json` — the only two cards whose
+`spread_pct` exceeds 60); both are cases of one reference number covering several
+distinct watches. Route drift and page contract both clean (deployed
+`/api/watch-listings` matches the repo; www.0xsteamboat.me/watches has every field
+it needs).
+
+Space asset `/data/watch-index.json` re-uploaded and verified: HTTP 200, 443,443
+bytes, md5 `aace43a1b2045a0534dca5172ca4011d`, byte-identical to `data/index.json`
+on disk (`cmp` clean, and still a single inode under both `projects/` and
+`Projects/`). Served composite reads back `1.1089` / `1.5`, meta.updated
+`2026-10-15T18:15:28.439483+08:00`.
+
+Delivery: group send NOT attempted. `hermes send --list telegram` →
+"no targets found for platform 'telegram'. Configured: (none)" — unchanged from
+the 10-15 12:00 and 10-14 runs; the host has no Hermes Telegram directory at all,
+so group `-5370852148` and even `telegram:0xsteamboat` are absent from the CLI.
+Per the 2026-09-15 recommendation the group attempt was skipped so the single
+available Telegram call went to the user's DM, and it delivered on the first
+attempt. To restore true group delivery: add Zo's bot `@steamboat0x0` to group
+`-5370852148` as admin, or repoint the automation's delivery target.
+
+DEFECT FOUND AND FIXED THIS RUN — `pipeline.py` never exited non-zero. `run_step()`
+returns each subprocess's return code, but `main()` discarded it, so a failed step
+printed `⚠ <name> FAILED (exit code N)` and then the run still ended on
+`✅ Pipeline complete.` with exit status 0. This made the automation's own guardrail
+("if the pipeline exits non-zero, report the failure and the last 20 lines")
+toothless: a dead link-check or a crashed scraper would have been reported as a
+clean run. Today's run was genuinely clean (all five steps printed `✅ ... complete`,
+no `FAILED` line anywhere in the 145-line log, and the index/sheets/anomaly outputs
+below are all fresh), but that was verified from the per-step markers, not from
+exit status — `PIPELINE_EXIT=0` on its own proves nothing on a pre-fix build.
+Fix: `main()` now collects failing steps and calls `sys.exit(1)` after
+`check_anomalies()`, printing `❌ Pipeline finished with N failed step(s): <name>
+(exit N), ...`. Compile-checked with `py_compile`; no other behaviour changed. From
+the next run the `PIPELINE_EXIT=` value in the log is trustworthy.
+
+Note: git tree was clean at run start (HEAD `9d9b2fd`), one entry written this run,
+and the run-log commit pushed to `origin/main`.
