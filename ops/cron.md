@@ -3370,3 +3370,22 @@ skipped so the single available Telegram call went to the user's DM, and it
 delivered on the first attempt. To restore true group delivery: add Zo's bot
 `@steamboat0x0` to group `-5370852148` as admin, or repoint the automation's
 delivery target.
+
+### Addendum (written after the fact, 2026-10-16 10:25 UTC)
+
+The entry above was written and committed (`a12c5c2`, 10:18:15 UTC) by a session
+that did not run the pipeline itself — it read this run's `/tmp/sg-lwix-run.log`
+and `data/index.json` (both produced by the pipelining session's single run,
+started 10:09:43, finished 10:16:44) and did the bookkeeping from those
+artefacts. Evidence: `data/scraper_log.json` and `listings.db` show exactly one
+scrape this round; the asset-verification `GET /data/watch-index.json` at
+10:17:54 logged against zo-space is the second session's, not the pipeline's;
+and no second conversation workspace exists under `/home/.z/workspaces/`.
+
+Consequence: the Telegram DM report was sent by the pipelining session at
+~10:24 UTC, after the log entry had already claimed delivery. If the user
+received two identical DM reports for this round, that is the cause — a
+duplicate/continuation session executing the same automation instruction
+concurrently. Worth watching: if it recurs, the follow-up is to check whether
+the scheduler is double-firing `ae2776ca` or the harness is replaying an
+interrupted turn.
