@@ -3214,3 +3214,93 @@ the next run the `PIPELINE_EXIT=` value in the log is trustworthy.
 
 Note: git tree was clean at run start (HEAD `9d9b2fd`), one entry written this run,
 and the run-log commit pushed to `origin/main`.
+
+## 2026-10-16 12:00 SGT run
+
+Pipeline run in a single invocation — `pipeline.py` only, orchestrating
+scraper → export → index → signals → references → sheets → anomaly check
+internally. No direct calls to `scraper.py`, `export_pipeline.py` or
+`index_engine.py`. Run start `2026-10-16T04:09:50Z` (12:09:50 SGT), index written
+`12:15:34 SGT` (~5m44s wall). Launched with `nohup ... &` and polled, so the log
+survived without any `tail` truncation; full stdout at `/tmp/sg-lwix-run.log`
+(147 lines). First run on the fixed `pipeline.py` (commit `7dfac24`) — and the
+new exit-code guardrail is exercised, not assumed: `PIPELINE_EXIT=0`, all five
+steps printed `✅ ... complete`, and no `FAILED` line anywhere in the log.
+
+Scrape: 174 new messages across 14 channels. Seven channels reported zero new
+messages: `watchcapital`, `goldmanluxurysg`, `watchplayboypteltd`,
+`sgwatchinsider`, `kbluxury`, `tagtimesingapore`, `watchhunts`.
+`goldmanluxurysg` (last post 2025-08-10) and `sgwatchinsider` (2026-01-01)
+remain dead by definition; the other five are live but quiet this slot.
+`watchbooksg` additionally skipped 1 message with no timestamp (unusable for
+every date-filtering consumer). Bulk of the volume: `watchexchangesg` 87,
+`watchbooksg` 54, `thefinesttime` 11, `watchdistrictsg` 9, `pngwatchdealer` 9 —
+all read off the run's own per-channel stdout this time, no re-derivation needed.
+
+Export: `2,404` listings exported (`2,047` priced). Dropped `16,978` — `16,684`
+expired, `294` sold, `0` dead links. Link check verified 300 of 2,404 (oldest
+first, <2d skipped, 300/run cap), zero dead. Dedupe collapsed 898 reposts (25.0%)
+across 753 repeatedly-listed watches. Sold tracer: 294 marked sold, all 294 by
+reply link, 0 by edit, median 2d to sell (p25 1d, p75 5d, n=294). The index-stage
+repool then collapsed 16,140 reposts (66.4%) leaving 8,170 unique watches.
+Date range 2025-01-03 → 2026-10-16 (427 days). Matching units 315 distinct (4,283
+by reference, 2,994 by model, 893 brand-level fallback); unit baselines cover 295
+of 315 units / 8,143 listings (100% of priced records). 15 outlier prices excluded
+from baselines, 189 price outliers flagged outside the 0.2x-5.0x brand baseline
+(kept in index). 16 brands still short of a baseline: Jaquet Droz, Louis Moinet,
+Carl F. Bucherer, Graham, Chronoswiss, Chanel, Konstantin Chaykin, Arnold & Son,
+Baume & Mercier, Louis Erard, Bedat, Fears, Oris, Jacob & Co, Baltic, Nomos.
+
+Index: composite `1.1221`, `+0.0200` / `+1.81%` 1d stored-vs-stored. Pre-Owned
+`1.0411`, NEW `1.3139`, NEW−PO spread `+0.2728`. Anchor 2026-04-02, 427 days
+tracked, 42/58 brands baselined, days_since_fresh=0. Move led by TAG Heuer,
+Cartier, Jaeger-LeCoultre; IWC, Panerai, Patek Philippe pulling the other way.
+Top weights: Rolex 0.199, Tudor 0.066, Cartier 0.050, Audemars Piguet 0.049,
+Omega 0.047.
+
+29th consecutive restatement: the 10-15 close was stored as 1.1089 at the 10-15
+18:00 run and now reads 1.1021 (−0.0068); the 10-14 close moved 1.0925 → 1.0852
+(−0.0073), 10-13 1.1066 → 1.0962 (−0.0104), 10-12 1.1178 → 1.1062 (−0.0116),
+10-11 1.1199 → 1.1069 (−0.0130). Same mechanism as the previous twenty-eight runs —
+each rebuild repools the rolling window with fresher listings. Stored-vs-stored is
+the only honest day-over-day read.
+
+Signals: 2,893 confirmed sales (median 5d to sell), 2,122 price cuts (median
+−2.25%), inventory looks 195.9% deeper than it is. Availability Score 31/100.
+References: 339 published (163 full confidence, 176 limited; 15 variant-grouped,
+23 model-level) across 26 brands; 164 too thin, 23 groups too broad, 25 model-card
+leftovers; deepest Rolex 126334 n=497 fair $19,150–$21,600 (±6%). Sheets:
+listings.csv (2,404), index_history.csv (427), brand_summary.csv (58), sold.csv
+(294), price_changes.csv (179), references.csv (339), reference_history.csv
+(1,320) → `/home/workspace/watch-index-data`.
+
+TWO anomalies flagged this run:
+
+    - 4 published listing(s) have no resolved brand (a classified watch should always resolve one — check parser/brands.py coverage). Example: 'NEW ARRIVAL- 116710BLNR\n🦇\n🦇\n🦇\nPrice: S$17,950\nhttps://carousell.app.link/ajoEFZY'
+    - 2 reference card(s) have an asking spread over 60% of median, widest rolex-124300 at 89.2% — that usually means one reference number covers several distinct watches.
+
+The unbranded flag holds at 4 with the same Carousell example as every run since
+10-09 (eleventh consecutive run), so the parser gap is stable rather than
+worsening. The wide-spread flag is unchanged in count: `rolex-124300` at 89.2%,
+back up from 86.6% at the 10-15 12:00 run and off the 93.1% peak, alongside
+`patek-philippe-7118` at 64.5% (verified directly from `data/references.json` —
+the only two cards whose `spread_pct` exceeds 60); both are cases of one reference
+number covering several distinct watches. Route drift and page contract both clean
+(deployed `/api/watch-listings` matches the repo; www.0xsteamboat.me/watches has
+every field it needs).
+
+Space asset `/data/watch-index.json` re-uploaded and verified: HTTP 200, 444,431
+bytes, md5 `07d3a34589ddcad2a1f8cf73030b8957`, byte-identical to `data/index.json`
+on disk (`cmp` clean). Served composite reads back `1.1221` / `1.81`, meta.updated
+`2026-10-16T12:15:34.453301+08:00`.
+
+Delivery: group send NOT attempted. `hermes send --list telegram` →
+"no targets found for platform 'telegram'. Configured: (none)" — unchanged from
+the 10-15 runs; the host has no Hermes Telegram directory at all, so group
+`-5370852148` and even `telegram:0xsteamboat` are absent from the CLI. Per the
+2026-09-15 recommendation the group attempt was skipped so the single available
+Telegram call went to the user's DM, and it delivered on the first attempt. To
+restore true group delivery: add Zo's bot `@steamboat0x0` to group `-5370852148`
+as admin, or repoint the automation's delivery target.
+
+Note: git tree was clean at run start (HEAD `7dfac24`), one entry written this run.
