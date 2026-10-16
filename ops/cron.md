@@ -3304,3 +3304,69 @@ restore true group delivery: add Zo's bot `@steamboat0x0` to group `-5370852148`
 as admin, or repoint the automation's delivery target.
 
 Note: git tree was clean at run start (HEAD `7dfac24`), one entry written this run.
+
+## Run log — 2026-10-16 18:00 SGT (PIPELINE_EXIT=0)
+
+Pipeline healthy end to end. Stdout captured to `/tmp/sg-lwix-run.log` per the
+2026-10-15 runner note; nothing lost this run.
+
+Scrape: 153 new messages across 14 channels. Biggest movers `watchexchangesg`
+(+85), `watchbooksg` (+32), `watchdistrictsg` (+19); `goldmanluxurysg` had no
+existing messages to refresh and saved 0, so it was silent on both counts.
+
+Export: 2,451 listings exported (2,081 priced). Dropped 16,989 — 16,682 expired,
+307 sold, 0 dead links. Sold tracer: 307 marked sold (307 by reply link, 0 by
+edit), median 2d to sell (p25 1d, p75 5d). Dedupe collapsed 959 reposts (25.8%)
+and 16,202 across the full window (66.4%); 8,216 unique watches remain. Link
+check verified 300/2451 (listings <2d old skipped, capped at 300/run). Unit
+baselines: 294 of 314 units, covering 8,189 listings (100%); 42 of 58 brands
+baselined; 15 outlier prices excluded from baseline computation.
+
+Index: SG-LWIX `1.1379`, +0.0492 (+4.52%) day-over-day against `1.0887` on
+2026-10-15 — the largest single-day move since the 10-09 restatement cluster.
+Pre-Owned `1.0404`, NEW `1.3363`, spread +0.2959. Anchor 2026-04-02, 427 days
+tracked, `days_since_fresh=0`. Top weights Rolex 0.199, Tudor 0.066, Cartier
+0.050, AP 0.049, Omega 0.047. Insights: "moved up 4.5% today. led by TAG Heuer,
+Zenith, Franck Muller. with IWC, Breitling, Hublot pulling the other way."
+Availability Score 68/100 (up from 31/100 at the 12:00 run).
+
+Signals: 2,909 confirmed sales (median 5d to sell), 2,124 price cuts (median
+−2.25%), inventory looks 195.6% deeper than it is. References: 340 published
+(163 full confidence, 177 limited; 15 variant-grouped, 24 model-level) across
+26 brands; 164 too thin, 23 groups too broad, 25 model-card leftovers; deepest
+Rolex 126334 n=499 fair $19,100–$21,600 (±6%). Sheets: listings.csv (2,451),
+index_history.csv (427), brand_summary.csv (58), sold.csv (307),
+price_changes.csv (185), references.csv (340), reference_history.csv (1,325) →
+`/home/workspace/watch-index-data`.
+
+TWO anomalies flagged this run:
+
+    - 4 published listing(s) have no resolved brand (a classified watch should always resolve one — check parser/brands.py coverage). Example: 'NEW ARRIVAL- 116710BLNR\n🦇\n🦇\n🦇\nPrice: S$17,950\nhttps://carousell.app.link/ajoEFZY'
+    - 2 reference card(s) have an asking spread over 60% of median, widest rolex-124300 at 89.2% — that usually means one reference number covers several distinct watches.
+
+The unbranded flag holds at 4 with the same Carousell example as every run since
+10-09 (12th consecutive run) — stable, not worsening. The wide-spread flag is
+unchanged: `rolex-124300` at 89.2% and `patek-philippe-7118` at 64.5%, verified
+directly from `data/references.json` as the only two cards with `spread_pct` > 60
+(Rolex 124300 Oyster Perpetual; Patek 7118 Nautilus). Separately, 189 price
+outliers (outside 0.2x–5.0x brand baseline) were flagged and kept in the index.
+Route drift and page contract both clean (deployed `/api/watch-listings` matches
+the repo; www.0xsteamboat.me/watches has every field it needs).
+
+Space asset `/data/watch-index.json` re-uploaded and verified: HTTP 200, 444,413
+bytes, md5 `7a08bb5d7bb9c82c53974bbbffa50b1f`, byte-identical to `data/index.json`
+on disk (`cmp` clean). Served composite reads back `1.1379`, meta.updated
+`2026-10-16T18:16:04.734336+08:00`.
+
+Quiet channels this run (7, zero new messages): `ChuanwatchSG`, `watchcapital`,
+`goldmanluxurysg`, `watchplayboypteltd`, `sgwatchinsider`, `HengWatch`,
+`tagtimesingapore`.
+
+Delivery: group send NOT attempted. `hermes send --list telegram` →
+"hermes send: no targets found for platform 'telegram'. Configured: (none)",
+unchanged from the 10-15 and 10-16 12:00 runs — the host has no Hermes Telegram
+directory at all. Per the 2026-09-15 recommendation the group attempt was
+skipped so the single available Telegram call went to the user's DM, and it
+delivered on the first attempt. To restore true group delivery: add Zo's bot
+`@steamboat0x0` to group `-5370852148` as admin, or repoint the automation's
+delivery target.
