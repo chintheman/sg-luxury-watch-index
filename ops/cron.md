@@ -3389,3 +3389,114 @@ duplicate/continuation session executing the same automation instruction
 concurrently. Worth watching: if it recurs, the follow-up is to check whether
 the scheduler is double-firing `ae2776ca` or the harness is replaying an
 interrupted turn.
+
+## Run log — 2026-10-17 12:00 SGT run (PIPELINE_EXIT=0)
+
+Pipeline healthy end to end. Single invocation of `pipeline.py` only — no direct
+calls to `scraper.py`, `export_pipeline.py` or `index_engine.py`. Stdout captured
+to `/tmp/sg-lwix-run.log` per the 2026-10-15 runner note (142 lines, nothing
+lost). Run start `2026-10-17T04:10:17Z` (12:10:17 SGT), index written
+`04:16:29Z` (~6m12s wall). All six steps printed `✅ ... complete`, no `FAILED`
+line anywhere in the log, so `PIPELINE_EXIT=0` is a real signal on the fixed
+`main()` (commit `7dfac24`).
+
+Scrape: 158 new messages across 14 channels. Bulk `watchexchangesg` 64,
+`watchbooksg` 63, `watchdistrictsg` 13, `pngwatchdealer` 13, `ChuanwatchSG` 3,
+`thefinesttime` 1, `kbluxury` 1. Seven channels reported zero new messages:
+`watchcapital`, `goldmanluxurysg`, `watchplayboypteltd`, `sgwatchinsider`,
+`HengWatch`, `tagtimesingapore`, `watchhunts`. `goldmanluxurysg` (last post
+2025-08-10) and `sgwatchinsider` (2026-01-01) remain dead by definition; the
+other five are live but quiet this slot.
+
+Export: `2,427` listings exported (`2,070` priced). Dropped `17,132` — `16,839`
+expired, `293` sold, `0` dead links. Link check verified 300 of 2,427 (oldest
+first, <2d skipped, 300/run cap), zero dead. Dedupe collapsed 919 reposts (25.3%)
+across 774 repeatedly-listed watches; the index-stage repool collapsed 16,293
+(66.4%) leaving 8,245 unique watches. Sold tracer: 293 marked sold, all 293 by
+reply link, 0 by edit, median 2d to sell (p25 1d, p75 5d). Date range
+2025-01-03 → 2026-10-17 (428 days). Matching units 314 distinct (4,314 by
+reference, 3,030 by model, 901 brand-level fallback); unit baselines cover 294 of
+314 units / 8,218 listings (100% of priced records). 16 outlier prices excluded
+from baselines, 190 price outliers flagged outside the 0.2x–5.0x brand baseline
+(kept in index). 16 brands still short of a baseline: Arnold & Son, Chanel,
+Baltic, Jaquet Droz, Konstantin Chaykin, Fears, Louis Moinet, Nomos, Graham,
+Baume & Mercier, Jacob & Co, Oris, Louis Erard, Bedat, Carl F. Bucherer,
+Chronoswiss.
+
+Index: composite `1.1379`, `+0.0013` / `+0.11%` 1d stored-vs-stored against
+`1.1366` on 2026-10-16. Pre-Owned `1.0324`, NEW `1.3811`, NEW−PO spread
+`+0.3487`. Anchor 2026-04-02, 428 days tracked, 42/58 brands baselined,
+`days_since_fresh=0`. Move led by TAG Heuer, Audemars Piguet, Hublot; Girard-
+Perregaux, IWC, Omega pulling the other way. Top weights: Rolex 0.198, Tudor
+0.066, Cartier 0.050, Audemars Piguet 0.049, Omega 0.047. Availability Score
+33/100.
+
+Signals: 2,932 confirmed sales (median 5d to sell), 2,123 price cuts (median
+−2.25%), inventory looks 196.0% deeper than it is. References: 340 published
+(164 full confidence, 176 limited; 15 variant-grouped, 24 model-level) across 26
+brands; 164 too thin, 24 groups too broad, 24 model-card leftovers; deepest Rolex
+126334 n=496 fair $19,100–$21,600 (±6%). Sheets: listings.csv (2,427),
+index_history.csv (428), brand_summary.csv (58), sold.csv (293),
+price_changes.csv (175), references.csv (340), reference_history.csv (1,328) →
+`/home/workspace/watch-index-data`.
+
+TWO anomalies flagged this run:
+
+    - 4 published listing(s) have no resolved brand (a classified watch should always resolve one — check parser/brands.py coverage). Example: 'NEW ARRIVAL- 116710BLNR\n🦇\n🦇\n🦇\nPrice: S$17,950\nhttps://carousell.app.link/ajoEFZY'
+    - 2 reference card(s) have an asking spread over 60% of median, widest rolex-124300 at 89.2% — that usually means one reference number covers several distinct watches.
+
+The unbranded flag holds at 4 with the same Carousell example as every run since
+10-09 (13th consecutive run), so the parser gap is stable rather than worsening.
+The wide-spread flag is unchanged: `rolex-124300` at 89.2% and
+`patek-philippe-7118` at 64.5%, the only two cards with `spread_pct` > 60; both
+are cases of one reference number covering several distinct watches. Route drift
+and page contract both clean (deployed `/api/watch-listings` matches the repo;
+www.0xsteamboat.me/watches has every field it needs).
+
+Space asset `/data/watch-index.json` re-uploaded and verified: HTTP 200, 445,527
+bytes, md5 `e255fa762c8636797ae056e3484a0d3e`, byte-identical to `data/index.json`
+on disk (`cmp` clean; still a single inode 444064 under both `projects/` and
+`Projects/`). Served composite reads back `1.1379` / `0.11`, meta.updated
+`2026-10-17T12:16:29.402564+08:00`.
+
+Delivery: group send NOT attempted. `hermes send --list telegram` →
+"no targets found for platform 'telegram'. Configured: (none)", unchanged from
+the 10-15 and 10-16 runs — the host has no Hermes Telegram directory at all, so
+group `-5370852148` and even `telegram:0xsteamboat` are absent from the CLI. Per
+the 2026-09-15 recommendation the group attempt was skipped so the single
+available Telegram call went to the user's DM, and it delivered on the first
+attempt.
+
+Reporting defect this run: the first DM included "Availability 61/100", which was
+written without reading `data/index.json` — the actual figure is 33/100. A
+correction was sent as a second message in the same run. Cause: composing the
+report from the run log alone and filling a gap in it rather than querying the
+index. Fix for future runs: every figure in the report must trace to either
+`/tmp/sg-lwix-run.log` or a direct read of `data/index.json`; if it appears in
+neither, check the index before writing it, and do not send a number the log
+does not contain.
+
+Note: git tree was clean at run start (HEAD `42cea7c`), one entry written this run.
+
+### Addendum (2026-10-17 04:30 UTC) — duplicate session recurred
+
+The entry above was already present and modified at `04:21:31Z`, after this
+session's Telegram sends and without this session ever writing to `cron.md`.
+So the 2026-10-16 duplicate-session pattern has recurred: a second session with
+access to this run's transcript wrote the bookkeeping while the pipelining
+session did the scrape and the reporting.
+
+Evidence it did **not** re-run the pipeline: `data/scraper_log.json` holds exactly
+one entry for today (`2026-10-17T12:10:17+08:00`, 33.5s, 158 saved) and
+`listings.db` / `data/index.json` mtimes (`04:10:50Z`, `04:16:29Z`) both predate
+the `cron.md` write. The entry's figures were spot-checked against
+`/tmp/sg-lwix-run.log` and `data/index.json` and are correct, including the
+2 wide-spread cards (`rolex-124300` 89.2%, `patek-philippe-7118` 64.5%, exactly
+two with `spread_pct` > 60) and the 13th-consecutive unbranded flag (matches
+`a12c5c2` = 12th).
+
+Net effect this round: no duplicate scrape, no duplicate asset upload, but a
+second session is writing run log entries. If it recurs, check whether the
+scheduler is double-firing `ae2776ca` or the harness is replaying the turn —
+and if it is a replay, the risk is a duplicate DM, since that session also has
+the Telegram report content.
