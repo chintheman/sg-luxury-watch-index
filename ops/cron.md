@@ -3668,3 +3668,63 @@ afterwards (delivered). If both sessions did send, the user will have one
 duplicate report — that is the residual risk flagged on 10-17, still unresolved.
 The double-fire needs looking at: either the scheduler fires `ae2776ca` twice or
 the harness replays the turn.
+
+## Run log — 2026-10-19 18:00 SGT run (PIPELINE_EXIT=0)
+
+Single `pipeline.py` invocation, no sub-scripts called by hand. Runtime ~6 min,
+`data/scraper_log.json` has exactly two entries for 2026-10-19 (`12:10:18`, 141
+saved; `18:10:19`, 125 saved), listing 2026-10-19T18:10:19+08:00 / 27.5s / 14
+channels.
+
+Scrape: 125 new messages across 14 channels. `sgwatchinsider` returned no
+update line at all; the other six quiet channels re-read existing messages
+without saving new ones.
+
+Export: 2,417 listings (2,019 priced), 8,348 unique watches after dedupe
+(16,717 reposts collapsed, 66.7%). Dropped 17,559 — 17,246 expired, 313 sold,
+0 dead links. Link-check verified 300 of 2,417. Sold tracer: 313 by reply link,
+0 by edit, median 3d to sell.
+
+Index: **`1.1420`**, +0.0140 day-over-day (**+1.24%**), previous point
+`1.1280` on 2026-10-18, 430 days tracked, 27 brands tracked today of 42
+baselined. Pre-Owned `1.0327`, NEW `1.377`, spread `+0.3443`. Drivers: Cartier,
+Rolex, Zenith up; Panerai, Jaeger-LeCoultre, Grand Seiko down. 190 price
+outliers flagged (>0.2x–5.0x unit baseline), kept in index.
+`days_since_fresh=0`.
+
+Signals/references/sheets all ran: 3,060 confirmed sales (median 5d), 2,135
+price cuts (median −2.26%), inventory 198.6% deeper than it is; 341 reference
+cards published (167 full confidence, 174 limited, 166 too thin); sheets
+exported to `/home/workspace/watch-index-data`.
+
+Anomalies (2, verbatim):
+- 3 published listing(s) have no resolved brand (a classified watch should
+  always resolve one — check parser/brands.py coverage). Example:
+  'NEW ARRIVAL- 116710BLNR / Price: S$17,950 / carousell.app.link/ajoEFZY'
+- 2 reference card(s) have an asking spread over 60% of median, widest
+  rolex-124300 at 89.2% — that usually means one reference number covers
+  several distinct watches.
+
+(Third consecutive run at 3 unbranded — down from 4 on the 12:00 run.)
+
+Route drift: deployed `/api/watch-listings` matches the repo. Page contract:
+`www.0xsteamboat.me/watches` has every field it needs. Both clean.
+
+Space asset `/data/watch-index.json` re-uploaded and verified: HTTP 200,
+447,454 bytes, served composite reads back `1.142` with last point
+`2026-10-19`, 430 points; md5 `d4d62b2be082aac62a9fc32c17a55886` matches
+`data/index.json` on disk.
+
+Zero-new-message channels this run (7): `watchdistrictsg`, `ChuanwatchSG`,
+`watchcapital`, `goldmanluxurysg`, `sgwatchinsider`, `HengWatch`,
+`tagtimesingapore`.
+
+Delivery: group send NOT attempted. `hermes send --list telegram` → "hermes
+send: no targets found for platform 'telegram'. Configured: (none)" — the
+Hermes Telegram directory is gone entirely, not just the group. Per the
+2026-09-15 recommendation the group attempt was skipped and the single
+available Telegram call went to the user's DM (delivered).
+
+No duplicate-session conflict this run: the 12:00 entry and its addendum were
+already committed (`6227f28`) when this session started, and `data/index.json`
+carried only this run's build.
