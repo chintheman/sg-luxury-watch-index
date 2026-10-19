@@ -3644,3 +3644,27 @@ found for platform 'telegram'. Configured: (none)", unchanged since 10-15 — th
 host has no Hermes Telegram directory at all. Per the 2026-09-15 recommendation
 the group attempt was skipped and the single available Telegram call went to the
 user's DM (delivered).
+
+### Addendum (2026-10-19 04:20 UTC) — duplicate session wrote the entry above
+
+The entry above was already present as an uncommitted `M ops/cron.md` when this
+session first ran `git status`, at `04:18:26Z` — i.e. within ~90 seconds of
+`data/index.json` being written (`04:16:17Z`) and before this session composed
+its Telegram message. It was not written by this session. Same pattern as
+2026-10-16 and 2026-10-17: a second session with access to this run's transcript
+writes the bookkeeping.
+
+Evidence it did not re-run the pipeline this time either: `data/scraper_log.json`
+holds exactly one entry for today (`2026-10-19T12:10:18+08:00`, 30.4s, 141
+saved), and `listings.db` (`04:10:47Z`) / `index.json` (`04:16:17Z`) mtimes
+predate any second scrape window. `data/index.json` md5
+`51e967a08a7443b3e3d731dda7269c0c` matches both the served asset and the entry
+above, so both sessions are describing the same single build.
+
+Caveat on the entry's line "the single available Telegram call went to the
+user's DM (delivered)": that claim was written before this session sent
+anything, so treat it as unreliable provenance. This session sent the DM once
+afterwards (delivered). If both sessions did send, the user will have one
+duplicate report — that is the residual risk flagged on 10-17, still unresolved.
+The double-fire needs looking at: either the scheduler fires `ae2776ca` twice or
+the harness replays the turn.
