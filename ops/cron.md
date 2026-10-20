@@ -3728,3 +3728,61 @@ available Telegram call went to the user's DM (delivered).
 No duplicate-session conflict this run: the 12:00 entry and its addendum were
 already committed (`6227f28`) when this session started, and `data/index.json`
 carried only this run's build.
+
+## Run log — 2026-10-20 18:00 SGT run (PIPELINE_EXIT=0)
+
+Single `pipeline.py` invocation, no sub-scripts called by hand. Runtime ~6 min.
+`data/scraper_log.json` runs list has exactly two entries for 2026-10-20
+(`12:10:17`, 168 saved; `18:10:21`, 176 saved, 30.0s, 14 channels) — the
+normal two-a-day schedule, no duplicate session.
+
+Scrape: 176 new messages across 14 channels. `goldmanluxurysg` returned no
+update line at all; the other five quiet channels re-read existing messages
+without saving new ones.
+
+Export: 2,454 listings (2,048 priced), 8,422 unique watches after dedupe
+(16,903 reposts collapsed, 66.7%). Dropped 17,687 — 17,364 expired, 323 sold,
+0 dead links. Link-check verified 300 of 2,454. Sold tracer: 323 by reply
+link, 0 by edit, median 3d to sell (p25 1d, p75 5d).
+
+Index: **`1.1437`**, +0.0033 day-over-day (**+0.29%**), previous point
+`1.1404` on 2026-10-19, 431 days tracked, 27 brands tracked today of 43
+baselined. Pre-Owned `1.0239`, NEW `1.4227`, spread `+0.3988`. Drivers: Patek
+Philippe, Grand Seiko, TAG Heuer up; Omega, Panerai, MB&F down. 193 price
+outliers flagged (>0.2x–5.0x brand baseline), kept in index.
+`days_since_fresh=0`. Availability score 93/100.
+
+Signals/references/sheets all ran: 3,091 confirmed sales (median 5d), 2,155
+price cuts (median −2.25%), inventory 199.1% deeper than it is; 346 reference
+cards published (169 full confidence, 177 limited, 166 too thin, 15
+variant-grouped, 23 model-level) across 27 brands; deepest rolex-126334 n=513
+fair S$19,100–21,600 (±6%); sheets exported to `/home/workspace/watch-index-data`.
+
+Anomalies (2, verbatim):
+- 3 published listing(s) have no resolved brand (a classified watch should
+  always resolve one — check parser/brands.py coverage). Example: '[Mint] Aug
+  2022 Vicenterra AstroLUNA Strap VT.254.01.21 Dark Blue Aventurine Dia'
+- 2 reference card(s) have an asking spread over 60% of median, widest
+  rolex-124300 at 89.2% — that usually means one reference number covers
+  several distinct watches.
+
+(Fourth consecutive run at 3 unbranded, now with a different example listing —
+the count is stable but the offending rows churn, so it is parser coverage, not
+one bad record. `rolex-124300` at 89.2% has been the widest spread every run
+logged this week.)
+
+Route drift: deployed `/api/watch-listings` matches the repo. Page contract:
+`www.0xsteamboat.me/watches` has every field it needs. Both clean.
+
+Space asset `/data/watch-index.json` re-uploaded and verified: HTTP 200, served
+file byte-identical to `data/index.json` on disk, md5
+`1d2e0aed33f0ec70d060456f3c2f2d8b`, served composite reads back `1.1437` with
+`meta.updated` `2026-10-20T18:15:59+08:00`.
+
+Zero-new-message channels this run (6): `watchcapital`, `goldmanluxurysg`,
+`watchplayboypteltd`, `sgwatchinsider`, `HengWatch`, `tagtimesingapore`.
+
+Delivery: group send NOT attempted. `hermes send --list telegram` → "hermes
+send: no targets found for platform 'telegram'. Configured: (none)". Skipped
+the group per instruction and sent the report to the user's DM via
+`send_telegram_message` (delivered).
