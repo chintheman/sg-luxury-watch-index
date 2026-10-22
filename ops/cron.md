@@ -3786,3 +3786,68 @@ Delivery: group send NOT attempted. `hermes send --list telegram` → "hermes
 send: no targets found for platform 'telegram'. Configured: (none)". Skipped
 the group per instruction and sent the report to the user's DM via
 `send_telegram_message` (delivered).
+
+## Run log — 2026-10-22 18:00 SGT run (PIPELINE_EXIT=0)
+
+Single `pipeline.py` invocation, no sub-scripts called by hand. Runtime ~8 min.
+`data/scraper_log.json` runs list has exactly two entries for 2026-10-22
+(`12:09:45`, 136 saved, 33.5s; `18:10:00`, 109 saved, 29.8s, 14 channels) — the
+normal two-a-day schedule, no duplicate session.
+
+Scrape: 109 new messages across 14 channels. Five channels returned zero new
+messages while still re-reading existing ones: `watchcapital`,
+`goldmanluxurysg`, `sgwatchinsider`, `HengWatch`, `tagtimesingapore`.
+`goldmanluxurysg` returned an update line this run (1 existing message updated)
+— the previous run logged it as missing entirely.
+
+Export: 2,417 listings (2,035 priced), 8,520 unique watches after dedupe
+(17,141 reposts collapsed, 66.8%). Dropped 17,947 — 17,663 expired, 284 sold,
+0 dead links. Link-check verified 300 of 2,417. Sold tracer: 284 by reply
+link, 0 by edit, median 3d to sell (p25 1d, p75 5d). Matching units 322
+distinct; 303 of 322 baselined (100% coverage); 15 outlier prices excluded
+from baselines.
+
+Index: **`1.1222`**, +0.0157 day-over-day (**+1.42%**), previous point
+`1.1065` on 2026-10-21, 433 days tracked, 24 brands tracked today of 43
+baselined. Pre-Owned `1.0211`, NEW `1.4648`, spread `+0.4437`. Drivers: Zenith,
+IWC, Audemars Piguet up; Cartier, Breitling, Jaeger-LeCoultre down. 194 price
+outliers flagged (>0.2x–5.0x brand baseline), kept in index.
+`days_since_fresh=0`. Availability score 54/100.
+
+**Sample-thinness flag:** brands tracked today is 24 — down from 27 on 10-21 and
+26 on 10-20 — and availability is 54/100 (67 and 100 on those days). Both daily
+moves this week (+1.42%, and 10-21's −3.25% print to `1.1065`) are carried by
+well under the 43 baselined brands. Watch the brand count before reading either
+move as price action.
+
+Signals/references/sheets all ran: 3,146 confirmed sales (median 5d), 2,167
+price cuts (median −2.25%), inventory 199.6% deeper than it is; 343 reference
+cards published (169 full confidence, 174 limited, 169 too thin, 15
+variant-grouped, 28 too broad, 22 model leftovers) across 26 brands; deepest
+rolex-126334 n=522 fair S$19,100–21,600 (±6%); sheets exported to
+`/home/workspace/watch-index-data`.
+
+Anomalies (2, verbatim):
+- 3 published listing(s) have no resolved brand (a classified watch should
+  always resolve one — check parser/brands.py coverage). Example: '[Mint] Aug
+  2022 Vicenterra AstroLUNA Strap VT.254.01.21 Dark Blue Aventurine Dia'
+- 3 reference card(s) have an asking spread over 60% of median, widest
+  rolex-124300 at 86.6% — that usually means one reference number covers
+  several distinct watches.
+
+(Fifth consecutive run at 3 unbranded; same example listing as the 10-20 run.
+`rolex-124300` remains the widest spread, 86.6% this run vs 89.2% logged all of
+last week — still far past the 60% trigger.)
+
+Route drift: deployed `/api/watch-listings` matches the repo. Page contract:
+`www.0xsteamboat.me/watches` has every field it needs. Both clean.
+
+Space asset `/data/watch-index.json` re-uploaded and verified: HTTP 200, served
+file byte-identical to `data/index.json` on disk, md5
+`dfb018bf79a53b7ce67641808734d16d`, served composite reads back `1.1222` with
+`meta.updated` `2026-10-22T18:17:32+08:00`.
+
+Delivery: group send NOT attempted. `hermes send --list telegram` → "hermes
+send: no targets found for platform 'telegram'. Configured: (none)". Skipped
+the group per instruction and sent the report to the user's DM via
+`send_telegram_message` (delivered).
