@@ -4034,3 +4034,47 @@ Delivery: group send NOT attempted. `hermes send --list telegram` → "hermes
 send: no targets found for platform 'telegram'. Configured: (none)". Skipped
 the group per instruction and sent the report to the user's DM via
 `send_telegram_message`.
+
+## Run log — 2026-10-24 18:00 SGT run (PIPELINE_EXIT=0)
+
+Full pipeline, single command. Started 18:10:04 SGT.
+
+Scrape: 138 new messages across 14 channels. Zero new messages (6):
+`ChuanwatchSG`, `goldmanluxurysg`, `watchplayboypteltd`, `sgwatchinsider`,
+`HengWatch`, `tagtimesingapore`.
+
+Export: 2,441 listings (2,045 priced), 8,617 unique watches after dedupe
+(17,505 reposts collapsed, 67.0%). Dropped 18,145 — 17,875 expired, 270 sold,
+0 dead links. Link-check verified 300 of 2,441. Sold tracer: 270 by reply link,
+0 by edit, median 3d to sell (p25 1d, p75 5d). Matching units 324 distinct;
+305 of 324 baselined (100% coverage); 15 outlier prices excluded; 196 price
+outliers flagged and kept in index.
+
+Index: **`1.1041`**, +0.0075 day-over-day (**+0.68%**), previous point
+`1.0966` on 2026-10-23, 435 days tracked, 23 brands tracked today of 43
+baselined. Pre-Owned `1.0229`, NEW `1.4732`, spread `+0.4503`. Drivers: TAG
+Heuer, Cartier, Omega up; Zenith, IWC, Breitling down. `days_since_fresh=0`.
+
+**Restatement flag:** the 10-23 close was quoted as `1.1119` at the 12:00 run
+today and now reads `1.0966`; the 10-24 value itself moved `1.1010` → `1.1041`
+between the two runs. Both prior and current points restated within six hours.
+
+Anomalies (2, verbatim):
+- 2 published listing(s) have no resolved brand (a classified watch should
+  always resolve one — check parser/brands.py coverage). Example: '[Mint] Aug
+  2022 Vicenterra AstroLUNA Strap VT.254.01.21 Dark Blue Aventurine Dia'
+- 3 reference card(s) have an asking spread over 60% of median, widest
+  rolex-124300 at 86.6% — that usually means one reference number covers
+  several distinct watches.
+
+Route drift: deployed `/api/watch-listings` matches the repo. Page contract:
+`www.0xsteamboat.me/watches` has every field it needs. Both clean.
+
+Space asset `/data/watch-index.json` re-uploaded and verified: HTTP 200,
+453,015 bytes, served file reads back composite `1.1041`, `change_1d_pct`
+`0.68`.
+
+Delivery: group send NOT attempted. `hermes send --list telegram` → "hermes
+send: no targets found for platform 'telegram'. Configured: (none)" — both
+bots have now lost all Telegram scopes, not just the group. Report sent to the
+user's DM via `send_telegram_message`.
