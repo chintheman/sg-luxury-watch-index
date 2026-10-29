@@ -4184,3 +4184,39 @@ Delivery: group send NOT attempted. `hermes send --list telegram` → "hermes
 send: no targets found for platform 'telegram'. Configured: (none)" — both
 bots still have no Telegram scopes at all. Report sent to the user's DM via
 `send_telegram_message`.
+
+## Run log — 2026-10-29 18:00 SGT
+
+Pipeline exit 0. 195 new messages across 14 channels, 985 reposts collapsed.
+2,429 listings exported (2,057 priced); dropped 18,530 (18,270 expired /
+260 sold / 0 dead links). Sold tracer median 3d to sell (n=260).
+
+Composite **1.1035**, 1d `−0.0062` (`−0.56%`); 7d `+1.73%`, 30d `−0.57%`,
+90d `+1.89%`. Pre-owned `1.0192`, NEW `1.4959`, spread `+0.4767`. Anchor
+2026-04-07, 43/58 brands baselined, 440 days tracked.
+
+Anomalies (2 lines, unchanged in kind from 10-28):
+- 3 published listing(s) have no resolved brand. Example is now a Trilobe
+  Nuit Fantastique (`NF05DG`) rather than the tagtimesg promo blob — count
+  rose 2 → 3, so the tagtimesg blobs are still in play *and* a genuine
+  parser gap exists alongside them.
+- 3 reference card(s) with asking spread >60% of median, widest
+  rolex-124300 at 86.6%.
+
+205 price outliers outside 0.2x–5.0x brand baseline, kept in index.
+
+Zero-new-message channels (6): `watchcapital`, `goldmanluxurysg`,
+`sgwatchinsider`, `HengWatch`, `tagtimesingapore`, `watchhunts`. Watch
+Capital / Heng Watch / Tag Time each refreshed existing messages only.
+
+Route drift: deployed `/api/watch-listings` matches the repo. Page contract:
+`www.0xsteamboat.me/watches` has every field it needs. Both clean.
+
+Space asset `/data/watch-index.json` re-uploaded and verified: HTTP 200,
+458,410 bytes, md5 identical to source, served composite `1.1035`,
+`change_1d_pct` `-0.56`.
+
+Delivery: group send NOT attempted — `hermes send --list telegram` →
+"no targets found for platform 'telegram'. Configured: (none)". Hermes still
+has no Telegram scopes at all. Report sent to the user's DM via
+`send_telegram_message`.
