@@ -4287,3 +4287,37 @@ Space asset `/data/watch-index.json` re-uploaded and verified: HTTP 200,
 Delivery: group send NOT attempted — `hermes send --list telegram` → "no
 targets found for platform 'telegram'. Configured: (none)". Report sent to
 the user's DM via `send_telegram_message`.
+
+## Run log — 2026-11-03 12:00 SGT
+
+Exit 0. 140 new messages across 14 channels. Composite `1.1214`
+(1.1077 → 1.1214, `+0.0137` / `+1.24%` 1d). Pre-owned `1.0335`, NEW `1.4389`,
+NEW-PO spread `+0.4054`. Led by Jaeger-LeCoultre, TAG Heuer, Cartier; Panerai,
+Tudor, Rolex pulling the other way.
+
+Export: 2,322 listings out (2,011 priced), dropped 18,639 — 18,379 expired,
+260 sold, 0 dead links. 849 reposts collapsed (24.7%). Sold tracer 260, all
+via reply link, median 3d to sell. Signals: 3,553 confirmed sales (median 5d),
+2,253 price cuts (median -2.19%), inventory 209.3% deeper than it looks.
+References: 355 published (169 full confidence), 174 too thin.
+
+Anomalies (2 lines):
+- 5 published listing(s) have no resolved brand — example is a tagtimesingapore
+  11.11 promo blob, not a watch. Same class of parser gap as prior runs.
+- 5 reference card(s) with asking spread >60% of median, widest rolex-124300 at
+  86.6%. Unchanged.
+
+Zero-new-message channels (8): `watchcapital`, `goldmanluxurysg`,
+`watchplayboypteltd`, `sgwatchinsider`, `HengWatch`, `kbluxury`,
+`tagtimesingapore`, `watchhunts`.
+
+Route drift: deployed `/api/watch-listings` matches repo. Page contract:
+`www.0xsteamboat.me/watches` has every field it needs. Both clean.
+
+Space asset `/data/watch-index.json` re-uploaded and verified: HTTP 200,
+463,338 bytes, md5 `f67cca78…` identical to source, live `meta.updated`
+2026-11-03T12:15:12+08:00, current 1.1214.
+
+Delivery: group send NOT attempted — `hermes send --list telegram` → "no
+targets found for platform 'telegram'. Configured: (none)". Report sent to
+the user's DM via `send_telegram_message`.
