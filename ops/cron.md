@@ -4321,3 +4321,84 @@ Space asset `/data/watch-index.json` re-uploaded and verified: HTTP 200,
 Delivery: group send NOT attempted — `hermes send --list telegram` → "no
 targets found for platform 'telegram'. Configured: (none)". Report sent to
 the user's DM via `send_telegram_message`.
+
+## Run log — 2026-11-04 18:00 SGT
+
+Exit 0. 204 new messages across 14 channels. Composite `1.1306`
+(1.1173 → 1.1306, `+0.0133` / `+1.19%` 1d; 7d `+4.33%`, 30d `+5.85%`,
+90d `+2.51%`). Pre-owned `1.0459`, NEW `1.3933`, NEW-PO spread `+0.3474`.
+Led by Breitling, Cartier, IWC; Jaeger-LeCoultre, Tudor, Zenith pulling the
+other way.
+
+Export: 2,383 listings out (2,034 priced), dropped 18,563 — 18,294 expired,
+269 sold, 0 dead links. 943 reposts collapsed (26.2%). Sold tracer 269, all
+via reply link, median 3d to sell. Signals: 3,618 confirmed sales (median 5d),
+2,292 price cuts (median -2.19%), inventory 210.7% deeper than it looks.
+References: 358 published (168 full confidence), 174 too thin, 27 brands.
+
+Anomalies (2 lines, verbatim):
+- 5 published listing(s) have no resolved brand (a classified watch should
+  always resolve one — check parser/brands.py coverage). Example: '[Mint]
+  Trilobe Nuit Fantastique Leather (Brown) NF03HG Grained Havana Dial | Mar'
+  Same Trilobe NF03HG parser gap as the 2026-10-31 and 2026-11-02 runs.
+- 5 reference card(s) have an asking spread over 60% of median, widest
+  rolex-124300 at 86.6%. Unchanged.
+
+Zero-new-message channels (6): `watchcapital`, `goldmanluxurysg`,
+`watchplayboypteltd`, `sgwatchinsider`, `HengWatch`, `kbluxury`.
+
+Route drift: deployed `/api/watch-listings` matches repo. Page contract:
+`www.0xsteamboat.me/watches` has every field it needs. Both clean.
+
+Space asset `/data/watch-index.json` re-uploaded and verified: HTTP 200,
+464,318 bytes, md5 `cf84c79f…` identical to source, live `meta.updated`
+2026-11-04T18:16:17+08:00, current 1.1306.
+
+Delivery: group send NOT attempted — `hermes send --list telegram` →
+"no targets found for platform 'telegram'. Configured: (none)". Report sent
+to the user's DM via `send_telegram_message`.
+
+## Run log — 2026-11-06 18:00 SGT
+
+Exit 0. 152 new messages across 14 channels. Composite `1.0953`
+(1.1120 → 1.0953, `-0.0167` / `-1.50%` 1d; 7d `-0.88%`, 30d `+3.35%`,
+90d `-2.91%`). Pre-owned `1.0496`, NEW `1.3953`, NEW-PO spread `+0.3457`.
+Led down by TAG Heuer, Bvlgari, Breitling; Audemars Piguet,
+Jaeger-LeCoultre, Cartier pulling the other way. 24 brands in today's
+window, 43/58 baselined, `days_since_fresh=0`.
+
+Export: 2,369 listings out (2,024 priced), dropped 18,614 — 18,302 expired,
+312 sold, 0 dead links. 19,814 reposts collapsed (68.2%), 9,258 unique
+watches. Link-check sampled 300/2,369. Sold tracer 312, all via reply link,
+median 3d to sell. Signals: 3,719 confirmed sales (median 5d), 2,343 price
+cuts (median -2.17%), inventory 212.4% deeper than it looks. References: 356
+published (168 full confidence), 178 too thin, 25 brands. 217 price outliers
+flagged, kept in index.
+
+Anomalies (2 lines, verbatim):
+- 5 published listing(s) have no resolved brand (a classified watch should
+  always resolve one — check parser/brands.py coverage). Example: '[Mint]
+  Trilobe Nuit Fantastique Leather (Brown) NF03HG Grained Havana Dial | Mar'
+  Same Trilobe NF03HG parser gap as 2026-10-31, 2026-11-02 and 2026-11-04.
+- 4 reference card(s) have an asking spread over 60% of median, widest
+  rolex-124300 at 86.6% — that usually means one reference number covers
+  several distinct watches. (Was 5 cards / same rolex-124300 86.6%.)
+
+Zero-new-message channels (7): `goldmanluxurysg` (no new and no update),
+`watchplayboypteltd`, `sgwatchinsider`, `HengWatch`, `kbluxury`,
+`tagtimesingapore`, `watchhunts`.
+
+Restatement: 2026-11-04 series point now `1.1358`, was logged as `1.1306`
+on that run — the -1.50% 1d includes a +0.0052 restatement of the base, so
+fresh movement is closer to -2.0%.
+
+Route drift: deployed `/api/watch-listings` matches repo. Page contract:
+`www.0xsteamboat.me/watches` has every field it needs. Both clean.
+
+Space asset `/data/watch-index.json` re-uploaded and verified: HTTP 200,
+465,364 bytes, md5 `8a4a309f…` identical to source, live `meta.updated`
+2026-11-06T18:15:10+08:00, current 1.0953.
+
+Delivery: group send NOT attempted — `hermes send --list telegram` → "no
+targets found for platform 'telegram'. Configured: (none)". Report sent to
+the user's DM via `send_telegram_message`.
